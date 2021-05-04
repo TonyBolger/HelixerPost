@@ -1,0 +1,13 @@
+[workspace]
+
+members = [ 
+  "helixer_post_bin",
+]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+lto = true
+

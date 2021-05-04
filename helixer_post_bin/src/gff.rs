@@ -1,0 +1,211 @@
+
+
+
+use std::io::{BufWriter, Write};
+use std::fmt::{Display, Formatter};
+
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub enum GffFeature
+{
+    Gene,
+    MRNA,
+    Exon,
+    FivePrimeUTR,
+    CDS,
+    ThreePrimeUTR
+}
+
+impl GffFeature
+{
+    pub fn as_str(self) -> &'static str
+    {
+        match self
+        {
+            GffFeature::Gene => "gene",
+            GffFeature::MRNA => "mRNA",
+            GffFeature::Exon => "exon",
+            GffFeature::FivePrimeUTR => "five_prime_UTR",
+            GffFeature::CDS => "CDS",
+            GffFeature::ThreePrimeUTR => "three_prime_UTR",
+        }
+    }
+}
+
+impl Display for GffFeature
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub enum GffStrand
+{
+    Forward,
+    Reverse
+}
+
+impl GffStrand
+{
+    pub fn other(self) -> GffStrand
+    {
+        match self
+        {
+            GffStrand::Forward => GffStrand::Reverse,
+            GffStrand::Reverse => GffStrand::Forward,
+        }
+    }
+
+    pub fn from_rev(rev: bool) -> GffStrand { if rev { GffStrand::Reverse } else { GffStrand::Forward } }
+
+    pub fn as_str(self) -> &'static str
+    {
+        match self
+        {
+            GffStrand::Forward => "+",
+            GffStrand::Reverse => "-",
+        }
+    }
+}
+
+
+
+
+
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub enum GffPhase
+{
+    Zero=0,
+    One=1,
+    Two=2
+}
+
+impl GffPhase
+{
+    pub fn as_str(self) -> &'static str
+    {
+        match self
+        {
+            GffPhase::Zero => "0",
+            GffPhase::One => "1",
+            GffPhase::Two => "2"
+        }
+    }
+}
+
+
+impl From<u64> for GffPhase
+{
+    fn from(offset: u64) -> Self {
+        match offset % 3
+            {
+            0 => GffPhase::Zero,
+            1 => GffPhase::Two, // Phase means 'bases left to read', so counts down - Because biology
+            2 => GffPhase::One,
+            _ => panic!("Math is broken")
+            }
+    }
+}
+
+
+/*
+
+1	sequence	The name of the sequence where the feature is located.
+2	source	Keyword identifying the source of the feature, like a program (e.g. Augustus or RepeatMasker) or an organization (like TAIR).
+3	feature	The feature type name, like "gene" or "exon". In a well structured GFF file, all the children features always follow their parents in a single block (so all exons of a transcript are put after their parent "transcript" feature line and before any other parent transcript line). In GFF3, all features and their relationships should be compatible with the standards released by the Sequence Ontology Project.
+4	start	Genomic start of the feature, with a 1-base offset. This is in contrast with other 0-offset half-open sequence formats, like BED.
+5	end	Genomic end of the feature, with a 1-base offset. This is the same end coordinate as it is in 0-offset half-open sequence formats, like BED.[citation needed]
+6	score	Numeric value that generally indicates the confidence of the source in the annotated feature. A value of "." (a dot) is used to define a null value.
+7	strand	Single character that indicates the strand of the feature; it can assume the values of "+" (positive, or 5'->3'), "-", (negative, or 3'->5'), "." (undetermined).
+8	phase	phase of CDS features; it can be either one of 0, 1, 2 (for CDS features) or "." (for everything else). See the section below for a detailed explanation.
+9	attributes	All the other information pertaining to this feature. The format, structure and content of this field is the one which varies the most between the three competing file formats.
+
+ */
+
+
+
+pub struct GffRecord
+{
+    sequence: String,
+    source: String,
+    feature: GffFeature,
+    start: u64,
+    end: u64,
+    score: Option<f32>,
+    strand: Option<GffStrand>,
+    phase: Option<GffPhase>,
+    attributes: String
+}
+
+impl GffRecord
+{
+    pub fn new(sequence: String, source: String, feature: GffFeature, start: u64, end: u64, score: Option<f32>,
+               strand: Option<GffStrand>, phase: Option<GffPhase>, attributes: String) -> GffRecord
+    {
+        GffRecord { sequence, source, feature, start, end, score, strand, phase, attributes }
+    }
+
+    pub fn swap_strand(&mut self, len: u64)
+    {
+        let start = self.start;
+        let end = self.end;
+
+        self.end=1+len-start;
+        self.start=1+len-end;
+
+        if let Some(strand) = self.strand { self.strand=Some(strand.other())} ;
+    }
+
+    pub fn get_sequence(&self) -> &String { &self.sequence }
+
+    pub fn get_source(&self) -> &String { &self.source }
+
+    pub fn get_start(&self) -> u64 { self.start }
+
+    pub fn get_end(&self) -> u64 { self.end }
+
+    pub fn get_score(&self) -> Option<f32> { self.score }
+
+    pub fn get_strand(&self) -> Option<GffStrand> { self.strand }
+
+    pub fn get_phase(&self) -> Option<GffPhase> { self.phase }
+
+    pub fn get_attributes(&self) -> &String { &self.attributes }
+
+
+
+}
+
+
+pub struct GffWriter<W: Write>
+{
+    writer: BufWriter<W>
+}
+
+impl<W: Write> GffWriter<W>
+{
+    pub fn new(writer: BufWriter<W>) -> GffWriter<W>
+    {
+        GffWriter { writer }
+    }
+
+    pub fn write_record(&mut self, rec: & GffRecord) -> std::io::Result<()>
+    {
+        let score = rec.score.map_or(".".to_owned(), |v| {format!("{}", v)});
+        let strand = rec.strand.map_or(".", |v| { v.as_str() });
+        let phase = rec.phase.map_or(".", |v| { v.as_str() });
+
+        write!(self.writer, "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+                       rec.sequence, rec.source, rec.feature, rec.start, rec.end, score, strand, phase, rec.attributes)
+    }
+
+    pub fn write_records(&mut self, recs: & [GffRecord]) -> std::io::Result<()>
+    {
+        for rec in recs
+            { self.write_record(rec)? }
+
+        Ok(())
+    }
+}
+

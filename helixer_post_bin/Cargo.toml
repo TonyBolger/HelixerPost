@@ -1,0 +1,9 @@
+[package]
+name = "helixer_post_bin"
+version = "0.1.0"
+authors = ["Tony Bolger <bolger.tony@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+hdf5 = "0.7.1"
+ndarray = "0.14.0"
