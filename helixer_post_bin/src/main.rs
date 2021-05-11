@@ -7,47 +7,11 @@ use helixer_post_bin::analysis::hmm::PredictionHmm;
 use helixer_post_bin::gff::GffWriter;
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use helixer_post_bin::analysis::gff_conv::hmm_solution_to_gff;
 
-/*
-fn dump_seq(helixer_res: &HelixerResults, seq: &Sequence)
-{
-    let id = seq.get_id();
-    println!("  Data for Sequence {} - ID {}", seq.get_name(), id.inner());
 
-    let bases_blocked_dataset = helixer_res.get_x().unwrap();
-    let bases_fwd = bases_blocked_dataset.fwd_iter(id).count();
-    let bases_rev = bases_blocked_dataset.rev_iter(id).count();
-    println!("      Got {} / {} bases", bases_fwd, bases_rev);
-
-    let gl_blocked_dataset = helixer_res.get_gene_lengths().unwrap();
-    let gl_fwd = gl_blocked_dataset.fwd_iter(id).count();
-    let gl_rev = gl_blocked_dataset.fwd_iter(id).count();
-    println!("      Got {} / {} gene lengths", gl_fwd, gl_rev);
-
-    let sw_blocked_dataset = helixer_res.get_sample_weights().unwrap();
-    let sw_fwd = sw_blocked_dataset.fwd_iter(id).count();
-    let sw_rev = sw_blocked_dataset.rev_iter(id).count();
-    println!("      Got {} / {} sample weights", sw_fwd, sw_rev);
-
-    let anno_blocked_dataset = helixer_res.get_y().unwrap();
-    let anno_fwd = anno_blocked_dataset.fwd_iter(id).count();
-    let anno_rev = anno_blocked_dataset.rev_iter(id).count();
-    println!("      Got {} / {} annos", anno_fwd, anno_rev);
-
-    let trans_blocked_dataset = helixer_res.get_transitions().unwrap();
-    let trans_fwd = trans_blocked_dataset.fwd_iter(id).count();
-    let trans_rev = trans_blocked_dataset.rev_iter(id).count();
-    println!("      Got {} / {} trans", trans_fwd, trans_rev);
-
-    let pred_blocked_dataset = helixer_res.get_predictions().unwrap();
-    let pred_fwd = pred_blocked_dataset.fwd_iter(id).count();
-    let pred_rev = pred_blocked_dataset.fwd_iter(id).count();
-    println!("      Got {} / {} preds", pred_fwd, pred_rev);
-}
-*/
-
-fn dump_extractor<W: Write>(extractor: &BasePredictionExtractor,
-                            species: &Species, seq: &Sequence, window_size: usize, edge_threshold: f32, peak_threshold: f32, gff_writer: &mut GffWriter<W>) -> (usize, usize)
+fn write_extractor_as_gff<W: Write>(extractor: &BasePredictionExtractor,
+                                    species: &Species, seq: &Sequence, window_size: usize, edge_threshold: f32, peak_threshold: f32, gff_writer: &mut GffWriter<W>) -> (usize, usize)
 {
     let id = seq.get_id();
     println!("  BP_Extractor for Sequence {} - ID {}", seq.get_name(), id.inner());
@@ -71,7 +35,7 @@ fn dump_extractor<W: Write>(extractor: &BasePredictionExtractor,
 
         if let Some(solution) = maybe_solution
             {
-            let gff_records = solution.as_gff(species.get_name(), seq.get_name(), "HelixerPost",
+            let gff_records = hmm_solution_to_gff(&solution, species.get_name(), seq.get_name(), "HelixerPost",
                                               false, start_pos, seq.get_length(), &mut gene_idx);
             gff_writer.write_records(&gff_records).expect("Failed to write to GFF");
             }
@@ -94,7 +58,7 @@ fn dump_extractor<W: Write>(extractor: &BasePredictionExtractor,
 
         if let Some(solution) = maybe_solution
             {
-            let gff_records = solution.as_gff(species.get_name(), seq.get_name(), "HelixerPost",
+            let gff_records = hmm_solution_to_gff(&solution, species.get_name(), seq.get_name(), "HelixerPost",
                                                   true, start_pos, seq.get_length(), &mut gene_idx);
             gff_writer.write_records(&gff_records).expect("Failed to write to GFF");
             }
@@ -126,14 +90,6 @@ fn main()
 
     let helixer_res = HelixerResults::new(predictions_path.as_ref(), genome_path.as_ref()).unwrap();
 
-    let is_err_sample = helixer_res.get_raw_genome().get_err_samples().unwrap();
-    let is_fully_ig = helixer_res.get_raw_genome().get_fully_intergenic_samples().unwrap();
-    let is_anno = helixer_res.get_raw_genome().get_is_annotated().unwrap();
-
-    println!("Is err_sample - T {} vs F {} ", is_err_sample.iter().filter(|x| **x).count(), is_err_sample.iter().filter(|x| !**x).count());
-    println!("Is fully_ig - T {} vs F {} ", is_fully_ig.iter().filter(|x| **x).count(), is_fully_ig.iter().filter(|x| !**x).count());
-    println!("Is anno - T {} vs F {} ", is_anno.iter().filter(|x| **x).count(), is_anno.iter().filter(|x| !**x).count());
-
     let extractor = BasePredictionExtractor::new(&helixer_res).unwrap();
 
     let mut total_count = 0;
@@ -151,7 +107,7 @@ fn main()
             let seq = helixer_res.get_sequence_by_id(*seq_id);
 
 //            dump_seq(&helixer_res, seq);
-            let (count, length) = dump_extractor(&extractor, species, seq, window_size, edge_threshold, peak_threshold, &mut gff_writer);
+            let (count, length) = write_extractor_as_gff(&extractor, species, seq, window_size, edge_threshold, peak_threshold, &mut gff_writer);
 
             total_count+=count;
             total_length+=length;

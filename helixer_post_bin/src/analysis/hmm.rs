@@ -1,7 +1,7 @@
 use crate::results::conv::{Bases, Prediction};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use crate::gff::{GffRecord, GffFeature, GffStrand, GffPhase};
+use std::num::NonZeroU32;
 
 #[derive(Clone, Copy)]
 struct PredictionPenalty
@@ -71,10 +71,7 @@ impl BasesPenalty
         self.penalty[1]
     }
 
-    pub fn get_t(&self) -> f64
-    {
-        self.penalty[2]
-    }
+    pub fn get_t(&self) -> f64 { self.penalty[2] }
 
     pub fn get_g(&self) -> f64
     {
@@ -103,21 +100,90 @@ impl From<&Bases> for BasesPenalty
         let mut penalty = [0.0 ; 4];
         for i in 0..4
         {
-            let adjusted_bases = raw_bases[i] as f64;
+            let adjusted_base = raw_bases[i] as f64;
 
-            let adjusted_bases = if adjusted_bases > BASE_PROB_FLOOR { adjusted_bases } else { BASE_PROB_FLOOR };
-            penalty[i] = -f64::log2(adjusted_bases);
+            let adjusted_base = if adjusted_base > BASE_PROB_FLOOR { adjusted_base } else { BASE_PROB_FLOOR };
+            penalty[i] = -f64::log2(adjusted_base);
         }
 
         let mut min_penalty = penalty[0];
         for i in 1..4
-        { if penalty[i] < min_penalty { min_penalty = penalty[i] } }
+            { if penalty[i] < min_penalty { min_penalty = penalty[i] } }
 
 
         for i in 0..4
-        { penalty[i]-=min_penalty; }
+            { penalty[i]-=min_penalty; }
 
         BasesPenalty { penalty }
+    }
+
+}
+
+
+struct TransitionContext<'a>
+{
+    base_pen: &'a [BasesPenalty],
+    offset: usize
+}
+
+impl<'a> TransitionContext<'a>
+{
+    fn new(base_pen: &'a [BasesPenalty],  offset: usize)-> TransitionContext<'a>
+    {
+        TransitionContext { base_pen, offset}
+    }
+
+    /*
+    fn get_upstream(&self, len: usize) -> Option<&[BasesPenalty]>
+    {
+        if len <= self.offset
+            { Some(&self.base_pen[self.offset-len .. self.offset]) }
+        else { None }
+    }
+*/
+    fn get_downstream(&self, len: usize) -> Option<&[BasesPenalty]>
+    {
+        if self.offset + len <= self.base_pen.len()
+        { Some(&self.base_pen[self.offset .. self.offset + len]) }
+        else
+        { None }
+    }
+
+    fn get_ctx(&self, ulen: usize, dlen: usize) -> Option<&[BasesPenalty]>
+    {
+        if ulen <= self.offset && self.offset + dlen <= self.base_pen.len()
+        { Some(&self.base_pen[self.offset-ulen .. self.offset + dlen]) }
+        else
+        { None }
+    }
+
+    fn get_donor_penalty_ag_gt(&self, can_splice: bool) -> Option<f64>
+    {
+        if let (Some(ds), true) = (self.get_ctx(2, 2), can_splice)
+        {
+            let pen =
+//                ds[0].get_a() +
+//                ds[1].get_g() +
+                ds[2].get_g() +
+                    ds[3].get_t();
+            Some(pen * DONOR_WEIGHT + DONOR_FIXED_PENALTY)
+        }
+        else
+        { None }
+    }
+
+    fn get_acceptor_penalty_ag_g(&self) -> Option<f64>
+    {
+        if let Some(us) = self.get_ctx(2,1)
+        {
+            let pen =
+                us[0].get_a() +
+                    us[1].get_g();
+//                us[2].get_g();
+            Some(pen*ACCEPTOR_WEIGHT)
+        }
+        else
+        { None }
     }
 
 }
@@ -126,9 +192,29 @@ impl From<&Bases> for BasesPenalty
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #[allow(dead_code)]
 #[derive(Clone, Copy, Eq, PartialEq)]
-enum HmmBaseState
+pub enum HmmAnnotationLabel
 {
     Intergenic,
     UTR5,
@@ -139,39 +225,43 @@ enum HmmBaseState
     UTR3,
 }
 
-impl HmmBaseState
+impl HmmAnnotationLabel
 {
     fn to_str(&self) -> &str
     {
         match self
         {
-            HmmBaseState::Intergenic => "Intergenic",
-            HmmBaseState::UTR5 => "UTR5",
-            HmmBaseState::Start => "Start",
-            HmmBaseState::Coding => "Coding",
-            HmmBaseState::Intron => "Intron",
-            HmmBaseState::Stop => "Stop",
-            HmmBaseState::UTR3 => "UTR3",
+            HmmAnnotationLabel::Intergenic => "Intergenic",
+            HmmAnnotationLabel::UTR5 => "UTR5",
+            HmmAnnotationLabel::Start => "Start",
+            HmmAnnotationLabel::Coding => "Coding",
+            HmmAnnotationLabel::Intron => "Intron",
+            HmmAnnotationLabel::Stop => "Stop",
+            HmmAnnotationLabel::UTR3 => "UTR3",
         }
     }
 }
 
-
-/*
-
-enum HmmState
+#[allow(dead_code)]
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum HmmIntron
 {
-    Intergenic,
-    UTR5,
-    Coding0,
-    Coding1,
-    Coding2,
-    Intron0,
-    Intron1,
-    Intron2,
-    UTR3
+    None,
+    Intron(NonZeroU32)
 }
-*/
+
+
+impl HmmIntron
+{
+    fn len(self) -> usize
+    {
+        match self
+        {
+            HmmIntron::None => 0,
+            HmmIntron::Intron(l) => l.get() as usize
+        }
+    }
+}
 
 
 const HMM_STATES: usize = 23;
@@ -215,53 +305,64 @@ impl std::cmp::PartialOrd for HmmState
     }
 }
 
+// Allow/Prevent introns within each state and/or at state transitions
 
-const START_WEIGHT: f64 = 10.0;
+const CAN_SPLICE_UTR5: bool = true;
+const CAN_SPLICE_UTR5_START: bool = true;
+const CAN_SPLICE_START: bool = true;
+const CAN_SPLICE_START_CODING: bool = true;
+const CAN_SPLICE_CODING: bool = true;
+const CAN_SPLICE_CODING_STOP: bool = true;
+const CAN_SPLICE_STOP: bool = true;
+const CAN_SPLICE_STOP_UTR3: bool = true;
+const CAN_SPLICE_UTR3: bool = true;
+
+const START_WEIGHT: f64 = 10_000.0;
 
 const DONOR_FIXED_PENALTY: f64 = 100.0;
 const DONOR_WEIGHT: f64 = 10.0;
 
 const ACCEPTOR_WEIGHT: f64 = 10.0;
 
-const STOP_WEIGHT: f64 = 10.0;
+const STOP_WEIGHT: f64 = 10_000.0;
 
 impl HmmState
 {
-    fn get_base_state(self) -> HmmBaseState
+    fn get_annotation_label(self) -> HmmAnnotationLabel
     {
-        let start_base = HmmBaseState::Coding; //Start;
-        let stop_base = HmmBaseState::Coding; //Stop;
+        let start_base = HmmAnnotationLabel::Coding; //Start;
+        let stop_base = HmmAnnotationLabel::Coding; //Stop;
 
         match self
         {
-            HmmState::Intergenic => HmmBaseState::Intergenic,
+            HmmState::Intergenic => HmmAnnotationLabel::Intergenic,
 
-            HmmState::UTR5 => HmmBaseState::UTR5,
-            HmmState::UTR5Intron => HmmBaseState::Intron,
+            HmmState::UTR5 => HmmAnnotationLabel::UTR5,
+            HmmState::UTR5Intron => HmmAnnotationLabel::Intron,
 
             HmmState::Start1 => start_base,
-            HmmState::Start1Intron => HmmBaseState::Intron,
+            HmmState::Start1Intron => HmmAnnotationLabel::Intron,
             HmmState::Start2 => start_base,
-            HmmState::Start2Intron => HmmBaseState::Intron,
+            HmmState::Start2Intron => HmmAnnotationLabel::Intron,
             HmmState::Start3 => start_base,
 
-            HmmState::Coding0 => HmmBaseState::Coding,
-            HmmState::Coding0Intron => HmmBaseState::Intron,
-            HmmState::Coding1 => HmmBaseState::Coding,
-            HmmState::Coding1Intron => HmmBaseState::Intron,
-            HmmState::Coding2 => HmmBaseState::Coding,
-            HmmState::Coding2Intron => HmmBaseState::Intron,
+            HmmState::Coding0 => HmmAnnotationLabel::Coding,
+            HmmState::Coding0Intron => HmmAnnotationLabel::Intron,
+            HmmState::Coding1 => HmmAnnotationLabel::Coding,
+            HmmState::Coding1Intron => HmmAnnotationLabel::Intron,
+            HmmState::Coding2 => HmmAnnotationLabel::Coding,
+            HmmState::Coding2Intron => HmmAnnotationLabel::Intron,
 
             HmmState::StopT => stop_base,
-            HmmState::StopTIntron => HmmBaseState::Intron,
+            HmmState::StopTIntron => HmmAnnotationLabel::Intron,
             HmmState::StopTA => stop_base,
-            HmmState::StopTAIntron => HmmBaseState::Intron,
+            HmmState::StopTAIntron => HmmAnnotationLabel::Intron,
             HmmState::StopTG => stop_base,
-            HmmState::StopTGIntron => HmmBaseState::Intron,
+            HmmState::StopTGIntron => HmmAnnotationLabel::Intron,
             HmmState::Stop3 => stop_base,
 
-            HmmState::UTR3 => HmmBaseState::UTR3,
-            HmmState::UTR3Intron => HmmBaseState::Intron,
+            HmmState::UTR3 => HmmAnnotationLabel::UTR3,
+            HmmState::UTR3Intron => HmmAnnotationLabel::Intron,
         }
     }
 
@@ -300,7 +401,15 @@ impl HmmState
         }
     }
 
-    fn populate_successor_state_penalties(self, trans_ctx: TransitionContext, successors: &mut Vec<(HmmState, f64)>)
+
+    /*
+    fn psstp_intron_donor(state: HmmPrimaryState, can_flag: bool)
+    {
+
+    }
+    */
+
+    fn populate_successor_states_and_transition_penalties(self, trans_ctx: TransitionContext, successors: &mut Vec<(HmmState, f64)>)
     {
         match self
             {
@@ -310,6 +419,7 @@ impl HmmState
                     successors.push((HmmState::UTR5, 0.0));
                     },
 
+
             HmmState::UTR5 =>
                     {
                     successors.push((HmmState::UTR5, 0.0));
@@ -317,7 +427,7 @@ impl HmmState
                     if let Some(ds) = trans_ctx.get_downstream(1)
                         { successors.push((HmmState::Start1, ds[0].get_a()*START_WEIGHT)); }
 
-                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt()
+                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_UTR5)
                         { successors.push((HmmState::UTR5Intron, donor_penalty)); }
                     },
 
@@ -329,7 +439,7 @@ impl HmmState
                         {
                         successors.push((HmmState::UTR5, acceptor_penalty));
 
-                        if let Some(ds) = trans_ctx.get_downstream(1)
+                        if let (Some(ds), true) = (trans_ctx.get_downstream(1), CAN_SPLICE_UTR5_START)
                             { successors.push((HmmState::Start1, acceptor_penalty+ds[0].get_a()*START_WEIGHT)); }
                         }
                     },
@@ -339,7 +449,7 @@ impl HmmState
                     if let Some(ds) = trans_ctx.get_downstream(1)
                         { successors.push((HmmState::Start2, ds[0].get_t()*START_WEIGHT)); }
 
-                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt()
+                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_START)
                         { successors.push((HmmState::Start1Intron, donor_penalty)); }
                     },
 
@@ -356,7 +466,7 @@ impl HmmState
                     if let Some(ds) = trans_ctx.get_downstream(1)
                         { successors.push((HmmState::Start3, ds[0].get_g()*START_WEIGHT)); }
 
-                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt()
+                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_START)
                         { successors.push((HmmState::Start2Intron, donor_penalty)); }
                     },
 
@@ -377,18 +487,21 @@ impl HmmState
                     if let Some(ds) = trans_ctx.get_downstream(1)
                         { successors.push((HmmState::StopT, ds[0].get_t()*STOP_WEIGHT)); }
 
-                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt()
+                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_START_CODING)
                         { successors.push((HmmState::Coding0Intron, donor_penalty)); }
                     },
 
              HmmState::Coding0 =>
                     {
-                    successors.push((HmmState::Coding1, 0.0));
-
                     if let Some(ds) = trans_ctx.get_downstream(1)
-                        { successors.push((HmmState::StopT, ds[0].get_t()*STOP_WEIGHT)); }
+                        {
+                            successors.push((HmmState::Coding1, ds[0].get_a()*STOP_WEIGHT));
+                            successors.push((HmmState::Coding1, ds[0].get_c()*STOP_WEIGHT));
+                            successors.push((HmmState::Coding1, ds[0].get_g()*STOP_WEIGHT));
+                            successors.push((HmmState::StopT, ds[0].get_t()*STOP_WEIGHT));
+                        }
 
-                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt()
+                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_CODING)
                         { successors.push((HmmState::Coding0Intron, donor_penalty)); }
                     }
 
@@ -404,7 +517,7 @@ impl HmmState
                     {
                     successors.push((HmmState::Coding2, 0.0));
 
-                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt()
+                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_CODING)
                         { successors.push((HmmState::Coding1Intron, donor_penalty)); }
                     }
 
@@ -420,7 +533,7 @@ impl HmmState
                     {
                     successors.push((HmmState::Coding0, 0.0));
 
-                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt()
+                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_CODING)
                         { successors.push((HmmState::Coding2Intron, donor_penalty)); }
                     }
 
@@ -432,20 +545,23 @@ impl HmmState
                         {
                         successors.push((HmmState::Coding0, acceptor_penalty));
 
-                        if let Some(ds) = trans_ctx.get_downstream(1)
+                        if let (Some(ds), true) = (trans_ctx.get_downstream(1), CAN_SPLICE_CODING_STOP)
                             { successors.push((HmmState::StopT, ds[0].get_t()*STOP_WEIGHT+acceptor_penalty)); }
                         }
                     },
 
-            HmmState::StopT =>
+            HmmState::StopT =>  // Equivalent to Coding1, but potentially a stop codon (Txx)
                     {
                     if let Some(ds) = trans_ctx.get_downstream(1)
                         {
                         successors.push((HmmState::StopTA, ds[0].get_a()*STOP_WEIGHT));
                         successors.push((HmmState::StopTG, ds[0].get_g()*STOP_WEIGHT));
+
+                        successors.push((HmmState::Coding2, ds[0].get_c()*STOP_WEIGHT));
+                        successors.push((HmmState::Coding2, ds[0].get_t()*STOP_WEIGHT));
                         }
 
-                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt()
+                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_STOP)
                         { successors.push((HmmState::StopTIntron, donor_penalty)); }
                     },
 
@@ -457,19 +573,26 @@ impl HmmState
                         {
                         successors.push((HmmState::StopTA, acceptor_penalty + ds[0].get_a()*STOP_WEIGHT));
                         successors.push((HmmState::StopTG, acceptor_penalty + ds[0].get_g()*STOP_WEIGHT));
+
+                        successors.push((HmmState::Coding2, acceptor_penalty + ds[0].get_c()*STOP_WEIGHT));
+                        successors.push((HmmState::Coding2, acceptor_penalty + ds[0].get_t()*STOP_WEIGHT));
                         }
                     }
 
-            HmmState::StopTA =>
+            HmmState::StopTA =>  // Equivalent to Coding2, but potentially a stop codon (TAx)
                     {
                     if let Some(ds) = trans_ctx.get_downstream(1)
                         {
                         successors.push((HmmState::Stop3, ds[0].get_a()*STOP_WEIGHT));
                         successors.push((HmmState::Stop3, ds[0].get_g()*STOP_WEIGHT));
+
+                        successors.push((HmmState::Coding0, ds[0].get_c()*STOP_WEIGHT));
+                        successors.push((HmmState::Coding0, ds[0].get_t()*STOP_WEIGHT));
                         }
 
-                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt()
+                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_STOP)
                         { successors.push((HmmState::StopTAIntron, donor_penalty)); }
+
                     },
 
             HmmState::StopTAIntron =>
@@ -480,15 +603,24 @@ impl HmmState
                         {
                         successors.push((HmmState::Stop3, acceptor_penalty + ds[0].get_a()*STOP_WEIGHT));
                         successors.push((HmmState::Stop3, acceptor_penalty + ds[0].get_g()*STOP_WEIGHT));
+
+                        successors.push((HmmState::Coding0, acceptor_penalty + ds[0].get_c()*STOP_WEIGHT));
+                        successors.push((HmmState::Coding0, acceptor_penalty + ds[0].get_t()*STOP_WEIGHT));
                         }
                     }
 
-            HmmState::StopTG =>
+            HmmState::StopTG => // Equivalent to Coding2, but potentially a stop codon (TGx)
                     {
                     if let Some(ds) = trans_ctx.get_downstream(1)
-                        { successors.push((HmmState::Stop3, ds[0].get_a()*STOP_WEIGHT)); }
+                        {
+                        successors.push((HmmState::Stop3, ds[0].get_a()*STOP_WEIGHT));
 
-                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt()
+                        successors.push((HmmState::Coding0, ds[0].get_c()*STOP_WEIGHT));
+                        successors.push((HmmState::Coding0, ds[0].get_g()*STOP_WEIGHT));
+                        successors.push((HmmState::Coding0, ds[0].get_t()*STOP_WEIGHT));
+                        }
+
+                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_STOP)
                         { successors.push((HmmState::StopTGIntron, donor_penalty)); }
                     },
 
@@ -497,14 +629,20 @@ impl HmmState
                     successors.push((HmmState::StopTGIntron, 0.0));
 
                     if let (Some(acceptor_penalty), Some(ds)) = (trans_ctx.get_acceptor_penalty_ag_g(), trans_ctx.get_downstream(1))
-                        { successors.push((HmmState::Stop3, acceptor_penalty + ds[0].get_a()*STOP_WEIGHT)); }
+                        {
+                        successors.push((HmmState::Stop3, acceptor_penalty + ds[0].get_a()*STOP_WEIGHT));
+
+                        successors.push((HmmState::Coding0, acceptor_penalty + ds[0].get_c()*STOP_WEIGHT));
+                        successors.push((HmmState::Coding0, acceptor_penalty + ds[0].get_g()*STOP_WEIGHT));
+                        successors.push((HmmState::Coding0, acceptor_penalty + ds[0].get_t()*STOP_WEIGHT));
+                        }
                     }
 
             HmmState::Stop3 =>
                     {
                     successors.push((HmmState::UTR3, 0.0));
 
-                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt()
+                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_STOP_UTR3)
                         { successors.push((HmmState::UTR3Intron, donor_penalty)); }
                     },
 
@@ -513,7 +651,7 @@ impl HmmState
                     successors.push((HmmState::UTR3, 0.0));
                     successors.push((HmmState::Intergenic, 0.0));
 
-                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt()
+                    if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_UTR3)
                         { successors.push((HmmState::UTR3Intron, donor_penalty)); }
                     },
 
@@ -533,12 +671,17 @@ impl HmmState
 
 
 
+
+
+
+
 const PENALTY_SCALE: f64=1_000_000.0;   // Convert to u64 to avoid FP annoyances
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct HmmEval
 {
-    position: usize,    // Number of bases _already_ produced
+    position: usize,   // Number of bases _already_ produced
+    intron: HmmIntron, // Intron (if any) between this and prior state (not populated _yet_)
     state: HmmState,
     previous_state: HmmState,
 
@@ -549,7 +692,7 @@ impl HmmEval
 {
     fn new_root() -> HmmEval
     {
-        HmmEval { position: 0, state: HmmState::Intergenic, previous_state: HmmState::Intergenic, penalty: 0}
+        HmmEval { position: 0, intron: HmmIntron::None, state: HmmState::Intergenic, previous_state: HmmState::Intergenic, penalty: 0}
     }
 
     fn new_successor(prev: &HmmEval, state: HmmState, extra_penalty: f64) -> HmmEval
@@ -558,7 +701,7 @@ impl HmmEval
         let previous_state = prev.state;
         let penalty = prev.penalty+((extra_penalty * PENALTY_SCALE) as u64);
 
-        HmmEval { position, state, previous_state, penalty }
+        HmmEval { position, intron: HmmIntron::None, state, previous_state, penalty }
     }
 }
 
@@ -578,73 +721,6 @@ impl PartialOrd for HmmEval {
 }
 
 
-struct TransitionContext<'a>
-{
-    base_pen: &'a [BasesPenalty],
-    offset: usize
-}
-
-impl<'a> TransitionContext<'a>
-{
-    fn new(base_pen: &'a [BasesPenalty],  offset: usize)-> TransitionContext<'a>
-    {
-        TransitionContext { base_pen, offset}
-    }
-
-    /*
-    fn get_upstream(&self, len: usize) -> Option<&[BasesPenalty]>
-    {
-        if len <= self.offset
-            { Some(&self.base_pen[self.offset-len .. self.offset]) }
-        else { None }
-    }
-*/
-    fn get_downstream(&self, len: usize) -> Option<&[BasesPenalty]>
-    {
-        if self.offset + len <= self.base_pen.len()
-            { Some(&self.base_pen[self.offset .. self.offset + len]) }
-        else
-            { None }
-    }
-
-    fn get_ctx(&self, ulen: usize, dlen: usize) -> Option<&[BasesPenalty]>
-    {
-        if ulen <= self.offset && self.offset + dlen <= self.base_pen.len()
-            { Some(&self.base_pen[self.offset-ulen .. self.offset + dlen]) }
-        else
-            { None }
-    }
-
-    fn get_donor_penalty_ag_gt(&self) -> Option<f64>
-    {
-        if let Some(ds) = self.get_ctx(2, 2)
-            {
-            let pen =
-//                ds[0].get_a() +
-//                ds[1].get_g() +
-                ds[2].get_g() +
-                ds[3].get_t();
-            Some(pen * DONOR_WEIGHT + DONOR_FIXED_PENALTY)
-            }
-        else
-            { None }
-    }
-
-    fn get_acceptor_penalty_ag_g(&self) -> Option<f64>
-    {
-        if let Some(us) = self.get_ctx(2,1)
-            {
-            let pen =
-                us[0].get_a() +
-                us[1].get_g();
-//                us[2].get_g();
-            Some(pen*ACCEPTOR_WEIGHT)
-            }
-        else
-            { None }
-    }
-
-}
 
 
 const MAX_EVALS: u64 = 100_000_000;
@@ -711,7 +787,7 @@ impl PredictionHmm
         let trans_ctx = TransitionContext::new(&self.bases_pen, eval.position);
 
         let mut successors = Vec::with_capacity(HMM_STATES);
-        eval.state.populate_successor_state_penalties(trans_ctx, &mut successors);
+        eval.state.populate_successor_states_and_transition_penalties(trans_ctx, &mut successors);
 
         for (next_state, trans_penalty) in successors.into_iter()
             {
@@ -753,17 +829,23 @@ pub struct HmmStateRegion
 {
     start_pos: usize,
     end_pos: usize,
-    state: HmmBaseState
+    annotation_label: HmmAnnotationLabel
 }
 
 impl HmmStateRegion
 {
-    fn new(start_pos: usize, end_pos: usize, state: HmmBaseState) -> HmmStateRegion
+    fn new(start_pos: usize, end_pos: usize, base_state: HmmAnnotationLabel) -> HmmStateRegion
     {
-        HmmStateRegion { start_pos, end_pos, state }
+        HmmStateRegion { start_pos, end_pos, annotation_label: base_state }
     }
 
-    fn len(&self) -> usize { self.end_pos - self.start_pos }
+    pub fn get_start_pos(&self) -> usize { self.start_pos }
+
+    pub fn get_end_pos(&self) -> usize { self.end_pos }
+
+    pub fn get_annotation_label(&self) -> HmmAnnotationLabel { self.annotation_label }
+
+    pub fn len(&self) -> usize { self.end_pos - self.start_pos }
 }
 
 
@@ -789,15 +871,28 @@ impl PredictionHmmSolution
 
         // State positions are 1 above base positions - state.pos = 0 is the dummy start, state pos 1 is the first real assignment
 
+        // End position is exclusive
+
         while eval.position > 0
             {
-            if eval.state.get_base_state()!=eval.previous_state.get_base_state()
+            if eval.intron!=HmmIntron::None // Break region if current state contains an intron or ...
                 {
-                regions.push(HmmStateRegion::new(eval.position-1, region_end_pos-1, eval.state.get_base_state()));
+                regions.push(HmmStateRegion::new(eval.position-1, region_end_pos-1, eval.state.get_annotation_label()));
+
+                let intron_start = eval.position - eval.intron.len();
+                let intron_end = eval.position - 1;
+                regions.push(HmmStateRegion::new(intron_start-1, intron_end-1, HmmAnnotationLabel::Intron));
+
+                region_end_pos = intron_start;
+                }
+            else if eval.state.get_annotation_label()!=eval.previous_state.get_annotation_label() // ... if next state changes annotation label
+                {
+                regions.push(HmmStateRegion::new(eval.position-1, region_end_pos-1, eval.state.get_annotation_label()));
                 region_end_pos = eval.position;
                 }
 
-            let idx = (eval.position-1) * HMM_STATES + (eval.previous_state as usize);
+            let prev_position = eval.position - 1;
+            let idx = prev_position * HMM_STATES + (eval.previous_state as usize);
 
 
             eval = self.hmm.best_eval.get(idx).unwrap().as_ref().unwrap();
@@ -805,52 +900,22 @@ impl PredictionHmmSolution
             }
 
         if region_end_pos > 1
-            { regions.push(HmmStateRegion::new(0, region_end_pos-1, eval.state.get_base_state())); }
+            { regions.push(HmmStateRegion::new(0, region_end_pos-1, eval.state.get_annotation_label())); }
 
         regions.reverse();
 
         regions
     }
 
-    /*
 
-Chr1    phytozomev10    gene    91376   95651   .       +       .       ID=AT1G01220.TAIR10;Name=AT1G01220
-Chr1    phytozomev10    mRNA    91376   95651   .       +       .       ID=AT1G01220.1.TAIR10;Name=AT1G01220.1;pacid=19652890;longest=1;Parent=AT1G01220.TAIR10
-Chr1    phytozomev10    exon    91376   91633   .       +       .       ID=AT1G01220.1.TAIR10.exon.1;Parent=AT1G01220.1.TAIR10;pacid=19652890
-Chr1    phytozomev10    five_prime_UTR  91376   91633   .       +       .       ID=AT1G01220.1.TAIR10.five_prime_UTR.1;Parent=AT1G01220.1.TAIR10;pacid=19652890
-Chr1    phytozomev10    exon    91743   92070   .       +       .       ID=AT1G01220.1.TAIR10.exon.2;Parent=AT1G01220.1.TAIR10;pacid=19652890
-Chr1    phytozomev10    five_prime_UTR  91743   91749   .       +       .       ID=AT1G01220.1.TAIR10.five_prime_UTR.2;Parent=AT1G01220.1.TAIR10;pacid=19652890
-Chr1    phytozomev10    CDS     91750   92070   .       +       0       ID=AT1G01220.1.TAIR10.CDS.1;Parent=AT1G01220.1.TAIR10;pacid=19652890
-Chr1    phytozomev10    exon    92270   92501   .       +       .       ID=AT1G01220.1.TAIR10.exon.3;Parent=AT1G01220.1.TAIR10;pacid=19652890
-Chr1    phytozomev10    CDS     92270   92501   .       +       0       ID=AT1G01220.1.TAIR10.CDS.2;Parent=AT1G01220.1.TAIR10;pacid=19652890
-Chr1    phytozomev10    exon    92569   92933   .       +       .       ID=AT1G01220.1.TAIR10.exon.4;Parent=AT1G01220.1.TAIR10;pacid=19652890
-Chr1    phytozomev10    CDS     92569   92933   .       +       2       ID=AT1G01220.1.TAIR10.CDS.3;Parent=AT1G01220.1.TAIR10;pacid=19652890
-Chr1    phytozomev10    exon    93045   93171   .       +       .       ID=AT1G01220.1.TAIR10.exon.5;Parent=AT1G01220.1.TAIR10;pacid=19652890
-Chr1    phytozomev10    CDS     93045   93171   .       +       0       ID=AT1G01220.1.TAIR10.CDS.4;Parent=AT1G01220.1.TAIR10;pacid=19652890
-Chr1    phytozomev10    exon    93271   94281   .       +       .       ID=AT1G01220.1.TAIR10.exon.6;Parent=AT1G01220.1.TAIR10;pacid=19652890
-Chr1    phytozomev10    CDS     93271   94281   .       +       2       ID=AT1G01220.1.TAIR10.CDS.5;Parent=AT1G01220.1.TAIR10;pacid=19652890
-Chr1    phytozomev10    exon    94357   95075   .       +       .       ID=AT1G01220.1.TAIR10.exon.7;Parent=AT1G01220.1.TAIR10;pacid=19652890
-Chr1    phytozomev10    CDS     94357   95075   .       +       2       ID=AT1G01220.1.TAIR10.CDS.6;Parent=AT1G01220.1.TAIR10;pacid=19652890
-Chr1    phytozomev10    exon    95160   95651   .       +       .       ID=AT1G01220.1.TAIR10.exon.8;Parent=AT1G01220.1.TAIR10;pacid=19652890
-Chr1    phytozomev10    CDS     95160   95552   .       +       0       ID=AT1G01220.1.TAIR10.CDS.7;Parent=AT1G01220.1.TAIR10;pacid=19652890
-Chr1    phytozomev10    three_prime_UTR 95553   95651   .       +       .       ID=AT1G01220.1.TAIR10.three_prime_UTR.1;Parent=AT1G01220.1.TAIR10;pacid=19652890
-
-
-sequence: String, source: String, feature: GffFeature, start: u64, end: u64, score: Option<f32>,
-               strand: Option<GffStrand>, phase: Option<GffPhase>, attributes: String
-
-     */
-
-
-
-    fn split_genes(regions: Vec<HmmStateRegion>) -> Vec<Vec<HmmStateRegion>>
+    pub fn split_genes(regions: Vec<HmmStateRegion>) -> Vec<Vec<HmmStateRegion>>
     {
         let mut vec_of_vecs = Vec::new();
 
         let mut current_vec = Vec::new();
         for region in regions
             {
-            if region.state == HmmBaseState::Intergenic
+            if region.annotation_label == HmmAnnotationLabel::Intergenic
                 {
                 if current_vec.len()>0
                     {
@@ -871,162 +936,6 @@ sequence: String, source: String, feature: GffFeature, start: u64, end: u64, sco
     }
 
 
-    // generate gene, mRNA and exon records, based on UTR5/CDS/UTR3
-    fn generate_gff_aggregate_records(recs: Vec<GffRecord>, sequence: &str, source: &str, strand: Option<GffStrand>, gene_name: &str) -> Vec<GffRecord>
-    {
-        if recs.len()==0
-            { return Vec::new(); }
-
-        let mut maybe_transcript_start : Option<u64> = None;
-        let mut maybe_transcript_end : Option<u64> = None;
-
-        let mut maybe_exon_start : Option<u64> = None;
-        let mut maybe_exon_end : Option<u64> = None;
-
-        let mut exon_ranges = Vec::new();
-
-        for rec in recs.iter()
-            {
-            if maybe_transcript_start == None { maybe_transcript_start = Some(rec.get_start()); }
-            maybe_transcript_end = Some(rec.get_end());
-
-            if let (Some(exon_start), Some(exon_end)) = (maybe_exon_start, maybe_exon_end)
-                {
-                if exon_end+1 < rec.get_start()
-                    {
-                    exon_ranges.push((exon_start, exon_end));
-                    maybe_exon_start = None;
-                    }
-                }
-
-            if maybe_exon_start == None { maybe_exon_start = Some(rec.get_start()); }
-            maybe_exon_end = Some(rec.get_end());
-            }
-
-        if let (Some(exon_start), Some(exon_end)) = (maybe_exon_start, maybe_exon_end)
-            { exon_ranges.push((exon_start, exon_end)); }
-
-
-        let transcript_start = maybe_transcript_start.unwrap();
-        let transcript_end = maybe_transcript_end.unwrap();
-
-        let mut recs_out = Vec::with_capacity(2+recs.len()*2);
-
-        let gene_attributes = format!("ID={}", gene_name);
-        let gene_rec = GffRecord::new(sequence.to_owned(), source.to_owned(), GffFeature::Gene,
-                                      transcript_start, transcript_end, None, strand, None, gene_attributes);
-        recs_out.push(gene_rec);
-
-        let mrna_attributes = format!("ID={}.1;Parent={}", gene_name, gene_name);
-        let mrna_rec = GffRecord::new(sequence.to_owned(), source.to_owned(), GffFeature::MRNA,
-                                      transcript_start, transcript_end, None, strand, None, mrna_attributes);
-        recs_out.push(mrna_rec);
-
-        let mut exon_range_iter = exon_ranges.into_iter();
-        let mut current_exon_end = None;
-        let mut exon_idx = 1;
-
-        for rec in recs
-        {
-            if current_exon_end.is_none() || current_exon_end.unwrap() < rec.get_start()
-                {
-                let (exon_start, exon_end) = exon_range_iter.next().unwrap();
-                let exon_attributes = format!("ID={}.1.exon.{};Parent={}.1", gene_name, exon_idx, gene_name);
-
-                let exon_rec = GffRecord::new(sequence.to_owned(), source.to_owned(), GffFeature::Exon,
-                                              exon_start, exon_end, None, strand, None, exon_attributes);
-
-                recs_out.push(exon_rec);
-
-                exon_idx+=1;
-                current_exon_end = Some(exon_end);
-                }
-
-            recs_out.push(rec);
-        }
-
-        recs_out
-    }
-
-    fn convert_regions_to_gff(regions: Vec<HmmStateRegion>, sequence: &str, source: &str, strand: Option<GffStrand>, position: usize, gene_name: &str) -> Vec<GffRecord>
-    {
-        let mut utr5_idx = 0;
-        let mut cds_idx = 0;
-        let mut utr3_idx = 0;
-
-        let mut coding_offset = 0;
-
-        let mut region_vec = Vec::new();
-
-        for region in regions.iter()
-        {
-            let maybe_feature_and_attributes = match region.state
-                {
-                    HmmBaseState::Intergenic => None, //panic!("Intergenic should be removed before now"),
-                    HmmBaseState::UTR5 => { utr5_idx+=1; Some((GffFeature::FivePrimeUTR , format!("ID={}.1.five_prime_UTR.{};Parent={}.1", gene_name, utr5_idx, gene_name))) },
-                    HmmBaseState::Start => panic!("Start should be Coding"),
-                    HmmBaseState::Coding => { cds_idx+=1; Some((GffFeature::CDS, format!("ID={}.1.CDS.{};Parent={}.1", gene_name, cds_idx, gene_name))) },
-                    HmmBaseState::Intron => None,
-                    HmmBaseState::Stop => panic!("Stop should be Coding"),
-                    HmmBaseState::UTR3 => { utr3_idx+=1; Some((GffFeature::ThreePrimeUTR, format!("ID={}.1.three_prime_UTR.{};Parent={}.1", gene_name, utr3_idx, gene_name))) }
-                };
-
-            if let Some((feature, attributes)) = maybe_feature_and_attributes
-            {
-                let start = (region.start_pos+position+1) as u64;
-                let end = (region.end_pos+position) as u64;
-
-                let phase = if region.state == HmmBaseState::Coding
-                    { Some(GffPhase::from(coding_offset)) }
-                else
-                    { None };
-
-                let rec = GffRecord::new(
-                    sequence.to_owned(), source.to_owned(), feature, start, end, None, strand, phase, attributes);
-
-                region_vec.push(rec);
-
-                if region.state == HmmBaseState::Coding
-                    { coding_offset+=region.len() as u64; }
-            }
-        }
-
-        region_vec
-    }
-
-
-    pub fn as_gff(&self, species: &str, sequence: &str, source: &str, rev: bool, position: usize, sequence_length: u64, gene_idx: &mut usize) -> Vec<GffRecord>
-    {
-        let all_regions = self.trace_regions();
-        let genes = Self::split_genes(all_regions);
-
-//        if genes.len() > 1
-//            { println!("{} genes at {} in {}", genes.len(), position, sequence); }
-
-        let mut all_gff_recs = Vec::new();
-
-        let strand = Some(GffStrand::Forward); // Initially generate everything as forward
-
-        for gene_regions in genes
-        {
-            let gene_name = format!("{}_{}_{:06}", species, sequence, *gene_idx);
-            let gene_gff_recs = Self::convert_regions_to_gff(gene_regions, sequence, source, strand, position, &gene_name);
-            let gene_gff_recs = Self::generate_gff_aggregate_records(gene_gff_recs, sequence, source, strand, &gene_name);
-
-            all_gff_recs.extend(gene_gff_recs);
-
-            *gene_idx += 1;
-        }
-
-        if rev
-            {
-            for gff_recs in all_gff_recs.iter_mut()
-                { gff_recs.swap_strand(sequence_length); }
-            }
-
-        all_gff_recs
-    }
-
 
 
     pub fn dump(&self, position: usize)
@@ -1045,7 +954,7 @@ sequence: String, source: String, feature: GffFeature, start: u64, end: u64, sco
                 seq.push(self.hmm.bases_pen[idx].as_str());
                 }
 
-            println!("{} to {} is {} - {}", region.start_pos+position+1, region.end_pos+position, region.state.to_str(), seq);
+            println!("{} to {} is {} - {}", region.start_pos+position+1, region.end_pos+position, region.annotation_label.to_str(), seq);
 
             }
 
@@ -1062,24 +971,6 @@ sequence: String, source: String, feature: GffFeature, start: u64, end: u64, sco
 
 
 /*
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     base[0]=A
     base[1]=T

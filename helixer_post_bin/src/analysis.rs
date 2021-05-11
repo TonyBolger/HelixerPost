@@ -3,6 +3,7 @@ use std::ops::Range;
 use crate::results::conv::{Prediction, Bases};
 use crate::results::iter::{BlockedDataset2D, BlockedDataset2DIter};
 
+pub mod gff_conv;
 pub mod hmm;
 pub mod window;
 
