@@ -1,7 +1,6 @@
 use crate::results::conv::{Bases, Prediction};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use std::num::NonZeroU32;
 
 #[derive(Clone, Copy)]
 struct PredictionPenalty
@@ -122,16 +121,30 @@ impl From<&Bases> for BasesPenalty
 
 struct TransitionContext<'a>
 {
+    pred_pen: &'a [PredictionPenalty],
     base_pen: &'a [BasesPenalty],
     offset: usize
 }
 
+#[allow(dead_code)]
 impl<'a> TransitionContext<'a>
 {
-    fn new(base_pen: &'a [BasesPenalty],  offset: usize)-> TransitionContext<'a>
+    fn new(pred_pen: &'a [PredictionPenalty], base_pen: &'a [BasesPenalty],  offset: usize)-> TransitionContext<'a>
     {
-        TransitionContext { base_pen, offset}
+        TransitionContext { pred_pen, base_pen, offset}
     }
+
+    fn new_shifted(&self, shift: usize)-> TransitionContext<'a>
+    {
+        TransitionContext { pred_pen: self.pred_pen, base_pen: self.base_pen, offset: self.offset + shift }
+    }
+
+    fn get_pred(&self, position: usize) -> Option<&PredictionPenalty>
+    {
+        self.pred_pen.get(self.offset + position)
+    }
+
+
 
     /*
     fn get_upstream(&self, len: usize) -> Option<&[BasesPenalty]>
@@ -141,6 +154,7 @@ impl<'a> TransitionContext<'a>
         else { None }
     }
 */
+
     fn get_downstream(&self, len: usize) -> Option<&[BasesPenalty]>
     {
         if self.offset + len <= self.base_pen.len()
@@ -242,12 +256,12 @@ impl HmmAnnotationLabel
     }
 }
 
+/*
 #[allow(dead_code)]
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum HmmIntron
 {
-    None,
-    Intron(NonZeroU32)
+    Intron(usize)
 }
 
 
@@ -257,41 +271,50 @@ impl HmmIntron
     {
         match self
         {
-            HmmIntron::None => 0,
-            HmmIntron::Intron(l) => l.get() as usize
+            HmmIntron::Intron(l) => l
         }
     }
 }
+*/
 
-
-const HMM_STATES: usize = 23;
+const HMM_STATES: usize = 33;
 
 #[derive(Clone, Copy, Eq, PartialEq, Ord)]
 enum HmmState
 {
     Intergenic = 0,
     UTR5 = 1,
-    UTR5Intron = 2,
-    Start1 = 3, // After A
-    Start1Intron = 4,
-    Start2 = 5, // After AT
-    Start2Intron = 6,
-    Start3 = 7,
-    Coding0 = 8,
-    Coding0Intron = 9,
-    Coding1 = 10,
-    Coding1Intron = 11,
-    Coding2 = 12,
-    Coding2Intron = 13,
-    StopT = 14,
-    StopTIntron = 15,
-    StopTA = 16,
-    StopTAIntron = 17,
-    StopTG = 18,
-    StopTGIntron = 19,
-    Stop3 = 20,
-    UTR3 = 21,
-    UTR3Intron = 22
+    UTR5IntronDSS = 2,
+    UTR5Intron = 3,
+    Start1 = 4, // After A
+    Start1IntronDSS = 5,
+    Start1Intron = 6,
+    Start2 = 7, // After AT
+    Start2IntronDSS = 8,
+    Start2Intron = 9,
+    Start3 = 10,
+    Coding0 = 11,
+    Coding0IntronDSS = 12,
+    Coding0Intron = 13,
+    Coding1 = 14,
+    Coding1IntronDSS = 15,
+    Coding1Intron = 16,
+    Coding2 = 17,
+    Coding2IntronDSS = 18,
+    Coding2Intron = 19,
+    StopT = 20,
+    StopTIntronDSS = 21,
+    StopTIntron = 22,
+    StopTA = 23,
+    StopTAIntronDSS = 24,
+    StopTAIntron = 25,
+    StopTG = 26,
+    StopTGIntronDSS = 27,
+    StopTGIntron = 28,
+    Stop3 = 29,
+    UTR3 = 30,
+    UTR3IntronDSS = 31,
+    UTR3Intron = 32
 }
 
 impl std::cmp::PartialOrd for HmmState
@@ -326,6 +349,8 @@ const ACCEPTOR_WEIGHT: f64 = 10.0;
 
 const STOP_WEIGHT: f64 = 10_000.0;
 
+//const MIN_INTRON_LENGTH: usize = 50;
+
 impl HmmState
 {
     fn get_annotation_label(self) -> HmmAnnotationLabel
@@ -338,30 +363,40 @@ impl HmmState
             HmmState::Intergenic => HmmAnnotationLabel::Intergenic,
 
             HmmState::UTR5 => HmmAnnotationLabel::UTR5,
+            HmmState::UTR5IntronDSS => HmmAnnotationLabel::Intron,
             HmmState::UTR5Intron => HmmAnnotationLabel::Intron,
 
             HmmState::Start1 => start_base,
+            HmmState::Start1IntronDSS => HmmAnnotationLabel::Intron,
             HmmState::Start1Intron => HmmAnnotationLabel::Intron,
             HmmState::Start2 => start_base,
+            HmmState::Start2IntronDSS => HmmAnnotationLabel::Intron,
             HmmState::Start2Intron => HmmAnnotationLabel::Intron,
             HmmState::Start3 => start_base,
 
             HmmState::Coding0 => HmmAnnotationLabel::Coding,
+            HmmState::Coding0IntronDSS => HmmAnnotationLabel::Intron,
             HmmState::Coding0Intron => HmmAnnotationLabel::Intron,
             HmmState::Coding1 => HmmAnnotationLabel::Coding,
+            HmmState::Coding1IntronDSS => HmmAnnotationLabel::Intron,
             HmmState::Coding1Intron => HmmAnnotationLabel::Intron,
             HmmState::Coding2 => HmmAnnotationLabel::Coding,
+            HmmState::Coding2IntronDSS => HmmAnnotationLabel::Intron,
             HmmState::Coding2Intron => HmmAnnotationLabel::Intron,
 
             HmmState::StopT => stop_base,
+            HmmState::StopTIntronDSS => HmmAnnotationLabel::Intron,
             HmmState::StopTIntron => HmmAnnotationLabel::Intron,
             HmmState::StopTA => stop_base,
+            HmmState::StopTAIntronDSS => HmmAnnotationLabel::Intron,
             HmmState::StopTAIntron => HmmAnnotationLabel::Intron,
             HmmState::StopTG => stop_base,
+            HmmState::StopTGIntronDSS => HmmAnnotationLabel::Intron,
             HmmState::StopTGIntron => HmmAnnotationLabel::Intron,
             HmmState::Stop3 => stop_base,
 
             HmmState::UTR3 => HmmAnnotationLabel::UTR3,
+            HmmState::UTR3IntronDSS => HmmAnnotationLabel::Intron,
             HmmState::UTR3Intron => HmmAnnotationLabel::Intron,
         }
     }
@@ -373,41 +408,61 @@ impl HmmState
             HmmState::Intergenic=> pred.get_intergenic_penalty(),
 
             HmmState::UTR5=> pred.get_utr_penalty(),
+            HmmState::UTR5IntronDSS=> pred.get_intron_penalty(),
             HmmState::UTR5Intron=> pred.get_intron_penalty(),
 
             HmmState::Start1=> pred.get_coding_penalty(),
+            HmmState::Start1IntronDSS => pred.get_intron_penalty(),
             HmmState::Start1Intron => pred.get_intron_penalty(),
             HmmState::Start2=> pred.get_coding_penalty(),
+            HmmState::Start2IntronDSS => pred.get_intron_penalty(),
             HmmState::Start2Intron => pred.get_intron_penalty(),
             HmmState::Start3=> pred.get_coding_penalty(),
 
             HmmState::Coding0=> pred.get_coding_penalty(),
+            HmmState::Coding0IntronDSS => pred.get_intron_penalty(),
             HmmState::Coding0Intron => pred.get_intron_penalty(),
             HmmState::Coding1=> pred.get_coding_penalty(),
+            HmmState::Coding1IntronDSS => pred.get_intron_penalty(),
             HmmState::Coding1Intron => pred.get_intron_penalty(),
             HmmState::Coding2=> pred.get_coding_penalty(),
+            HmmState::Coding2IntronDSS => pred.get_intron_penalty(),
             HmmState::Coding2Intron => pred.get_intron_penalty(),
 
             HmmState::StopT => pred.get_coding_penalty(),
+            HmmState::StopTIntronDSS => pred.get_intron_penalty(),
             HmmState::StopTIntron => pred.get_intron_penalty(),
             HmmState::StopTA => pred.get_coding_penalty(),
+            HmmState::StopTAIntronDSS => pred.get_intron_penalty(),
             HmmState::StopTAIntron => pred.get_intron_penalty(),
             HmmState::StopTG => pred.get_coding_penalty(),
+            HmmState::StopTGIntronDSS => pred.get_intron_penalty(),
             HmmState::StopTGIntron => pred.get_intron_penalty(),
             HmmState::Stop3 => pred.get_coding_penalty(),
 
             HmmState::UTR3=> pred.get_utr_penalty(),
+            HmmState::UTR3IntronDSS=> pred.get_intron_penalty(),
             HmmState::UTR3Intron=> pred.get_intron_penalty(),
         }
     }
 
-
-    /*
-    fn psstp_intron_donor(state: HmmPrimaryState, can_flag: bool)
+    fn get_base_count(self) -> usize
     {
-
+        match self
+        {
+            HmmState::UTR5IntronDSS => 39,
+            HmmState::Start1IntronDSS => 39,
+            HmmState::Start2IntronDSS => 39,
+            HmmState::Coding0IntronDSS => 39,
+            HmmState::Coding1IntronDSS => 39,
+            HmmState::Coding2IntronDSS => 39,
+            HmmState::StopTIntronDSS => 39,
+            HmmState::StopTAIntronDSS => 39,
+            HmmState::StopTGIntronDSS => 39,
+            HmmState::UTR3IntronDSS => 39,
+            _ => 1
+        }
     }
-    */
 
     fn populate_successor_states_and_transition_penalties(self, trans_ctx: TransitionContext, successors: &mut Vec<(HmmState, f64)>)
     {
@@ -419,7 +474,6 @@ impl HmmState
                     successors.push((HmmState::UTR5, 0.0));
                     },
 
-
             HmmState::UTR5 =>
                     {
                     successors.push((HmmState::UTR5, 0.0));
@@ -428,8 +482,11 @@ impl HmmState
                         { successors.push((HmmState::Start1, ds[0].get_a()*START_WEIGHT)); }
 
                     if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_UTR5)
-                        { successors.push((HmmState::UTR5Intron, donor_penalty)); }
+                        { successors.push((HmmState::UTR5IntronDSS, donor_penalty)); }
+
                     },
+
+            HmmState::UTR5IntronDSS => { successors.push((HmmState::UTR5Intron, 0.0))},
 
             HmmState::UTR5Intron =>
                     {
@@ -450,8 +507,10 @@ impl HmmState
                         { successors.push((HmmState::Start2, ds[0].get_t()*START_WEIGHT)); }
 
                     if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_START)
-                        { successors.push((HmmState::Start1Intron, donor_penalty)); }
+                        { successors.push((HmmState::Start1IntronDSS, donor_penalty)); }
                     },
+
+            HmmState::Start1IntronDSS => { successors.push((HmmState::Start1Intron, 0.0))},
 
             HmmState::Start1Intron =>
                     {
@@ -467,8 +526,11 @@ impl HmmState
                         { successors.push((HmmState::Start3, ds[0].get_g()*START_WEIGHT)); }
 
                     if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_START)
-                        { successors.push((HmmState::Start2Intron, donor_penalty)); }
+                        { successors.push((HmmState::Start2IntronDSS, donor_penalty)); }
                     },
+
+
+            HmmState::Start2IntronDSS => { successors.push((HmmState::Start2Intron, 0.0))},
 
             HmmState::Start2Intron =>
                     {
@@ -488,7 +550,7 @@ impl HmmState
                         { successors.push((HmmState::StopT, ds[0].get_t()*STOP_WEIGHT)); }
 
                     if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_START_CODING)
-                        { successors.push((HmmState::Coding0Intron, donor_penalty)); }
+                        { successors.push((HmmState::Coding0IntronDSS, donor_penalty)); }
                     },
 
              HmmState::Coding0 =>
@@ -502,8 +564,10 @@ impl HmmState
                         }
 
                     if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_CODING)
-                        { successors.push((HmmState::Coding0Intron, donor_penalty)); }
+                        { successors.push((HmmState::Coding0IntronDSS, donor_penalty)); }
                     }
+
+            HmmState::Coding0IntronDSS => { successors.push((HmmState::Coding0Intron, 0.0))},
 
             HmmState::Coding0Intron =>
                     {
@@ -518,8 +582,10 @@ impl HmmState
                     successors.push((HmmState::Coding2, 0.0));
 
                     if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_CODING)
-                        { successors.push((HmmState::Coding1Intron, donor_penalty)); }
+                        { successors.push((HmmState::Coding1IntronDSS, donor_penalty)); }
                     }
+
+            HmmState::Coding1IntronDSS => { successors.push((HmmState::Coding1Intron, 0.0))},
 
             HmmState::Coding1Intron =>
                     {
@@ -534,8 +600,10 @@ impl HmmState
                     successors.push((HmmState::Coding0, 0.0));
 
                     if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_CODING)
-                        { successors.push((HmmState::Coding2Intron, donor_penalty)); }
+                        { successors.push((HmmState::Coding2IntronDSS, donor_penalty)); }
                     }
+
+            HmmState::Coding2IntronDSS => { successors.push((HmmState::Coding2Intron, 0.0))},
 
             HmmState::Coding2Intron =>
                     {
@@ -562,8 +630,10 @@ impl HmmState
                         }
 
                     if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_STOP)
-                        { successors.push((HmmState::StopTIntron, donor_penalty)); }
+                        { successors.push((HmmState::StopTIntronDSS, donor_penalty)); }
                     },
+
+            HmmState::StopTIntronDSS => { successors.push((HmmState::StopTIntron, 0.0))},
 
             HmmState::StopTIntron =>
                     {
@@ -591,9 +661,11 @@ impl HmmState
                         }
 
                     if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_STOP)
-                        { successors.push((HmmState::StopTAIntron, donor_penalty)); }
+                        { successors.push((HmmState::StopTAIntronDSS, donor_penalty)); }
 
                     },
+
+            HmmState::StopTAIntronDSS => { successors.push((HmmState::StopTAIntron, 0.0))},
 
             HmmState::StopTAIntron =>
                     {
@@ -621,8 +693,10 @@ impl HmmState
                         }
 
                     if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_STOP)
-                        { successors.push((HmmState::StopTGIntron, donor_penalty)); }
+                        { successors.push((HmmState::StopTGIntronDSS, donor_penalty)); }
                     },
+
+            HmmState::StopTGIntronDSS => { successors.push((HmmState::StopTGIntron, 0.0))},
 
             HmmState::StopTGIntron =>
                     {
@@ -643,7 +717,7 @@ impl HmmState
                     successors.push((HmmState::UTR3, 0.0));
 
                     if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_STOP_UTR3)
-                        { successors.push((HmmState::UTR3Intron, donor_penalty)); }
+                        { successors.push((HmmState::UTR3IntronDSS, donor_penalty)); }
                     },
 
             HmmState::UTR3 =>
@@ -652,8 +726,10 @@ impl HmmState
                     successors.push((HmmState::Intergenic, 0.0));
 
                     if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_UTR3)
-                        { successors.push((HmmState::UTR3Intron, donor_penalty)); }
+                        { successors.push((HmmState::UTR3IntronDSS, donor_penalty)); }
                     },
+
+            HmmState::UTR3IntronDSS => { successors.push((HmmState::UTR3Intron, 0.0))},
 
             HmmState::UTR3Intron =>
                     {
@@ -680,8 +756,8 @@ const PENALTY_SCALE: f64=1_000_000.0;   // Convert to u64 to avoid FP annoyances
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct HmmEval
 {
-    position: usize,   // Number of bases _already_ produced
-    intron: HmmIntron, // Intron (if any) between this and prior state (not populated _yet_)
+    start_position: usize,   // Number of bases produced before this state
+    end_position: usize, // Number of bases produced including this state
     state: HmmState,
     previous_state: HmmState,
 
@@ -692,16 +768,12 @@ impl HmmEval
 {
     fn new_root() -> HmmEval
     {
-        HmmEval { position: 0, intron: HmmIntron::None, state: HmmState::Intergenic, previous_state: HmmState::Intergenic, penalty: 0}
+        HmmEval { start_position: 0, end_position: 0, state: HmmState::Intergenic, previous_state: HmmState::Intergenic, penalty: 0}
     }
 
-    fn new_successor(prev: &HmmEval, state: HmmState, extra_penalty: f64) -> HmmEval
+    fn new_successor(start_position: usize, end_position: usize, state: HmmState, previous_state: HmmState, penalty: u64) -> HmmEval
     {
-        let position = prev.position+1;
-        let previous_state = prev.state;
-        let penalty = prev.penalty+((extra_penalty * PENALTY_SCALE) as u64);
-
-        HmmEval { position, intron: HmmIntron::None, state, previous_state, penalty }
+        HmmEval { start_position, end_position, state, previous_state, penalty }
     }
 }
 
@@ -709,7 +781,7 @@ impl Ord for HmmEval {
     fn cmp(&self, other: &Self) -> Ordering {
         // Order on penalty (lowest), then position (highest)
         other.penalty.cmp(&self.penalty).
-            then_with(|| self.position.cmp(&other.position))
+            then_with(|| self.end_position.cmp(&other.end_position))
             //.then_with(|| self.state.cmp(&other.state))
     }
 }
@@ -757,7 +829,7 @@ impl PredictionHmm
 
     fn consider_eval(&mut self, eval: HmmEval)
     {
-        let idx = eval.position * HMM_STATES + (eval.state as usize);
+        let idx = eval.end_position * HMM_STATES + (eval.state as usize);
 
         let maybe_old_eval = &self.best_eval[idx];
 
@@ -773,7 +845,7 @@ impl PredictionHmm
 
     fn is_eval_current(&self, eval: &HmmEval) -> bool
     {
-        let idx = eval.position * HMM_STATES + (eval.state as usize);
+        let idx = eval.end_position * HMM_STATES + (eval.state as usize);
         let best_eval = &self.best_eval[idx].expect("Eval from heap not in best_eval");
 
         best_eval == eval
@@ -784,17 +856,29 @@ impl PredictionHmm
         if !self.is_eval_current(eval)
             { return; }
 
-        let trans_ctx = TransitionContext::new(&self.bases_pen, eval.position);
+        let trans_ctx = TransitionContext::new(&self.pred_pen, &self.bases_pen, eval.end_position);
 
         let mut successors = Vec::with_capacity(HMM_STATES);
         eval.state.populate_successor_states_and_transition_penalties(trans_ctx, &mut successors);
 
         for (next_state, trans_penalty) in successors.into_iter()
             {
-            let state_penalty = next_state.get_state_penalty(&self.pred_pen[eval.position]);
-            let next_eval = HmmEval::new_successor(eval, next_state, trans_penalty + state_penalty);
+            let mut extra_penalty = trans_penalty;
 
-            self.consider_eval(next_eval);
+            let start_position = eval.end_position;
+            let end_position = start_position + next_state.get_base_count();
+
+            if end_position <= self.pred_pen.len()  // Drop 'long' state picked near end
+                {
+                for pos in start_position..end_position
+                    { extra_penalty += next_state.get_state_penalty(&self.pred_pen[pos]); }
+
+                let penalty = eval.penalty + ((extra_penalty * PENALTY_SCALE) as u64);
+
+                let next_eval = HmmEval::new_successor(start_position, end_position, next_state, eval.state, penalty);
+
+                self.consider_eval(next_eval);
+                }
             }
     }
 
@@ -809,7 +893,7 @@ impl PredictionHmm
         {
             if let Some(eval) = self.eval_heap.pop()
                 {
-                if eval.position == self.pred_pen.len()
+                if eval.end_position == self.pred_pen.len()
                     { return Some(PredictionHmmSolution::new(self, eval)); }
 
                 self.process_eval(&eval);
@@ -867,31 +951,21 @@ impl PredictionHmmSolution
         let mut regions = Vec::new();
 
         let mut eval = &self.eval;
-        let mut region_end_pos = eval.position;
+        let mut region_end_pos = eval.end_position;
 
-        // State positions are 1 above base positions - state.pos = 0 is the dummy start, state pos 1 is the first real assignment
+        // State positions are 1 above base positions - state.end_pos = 0 is the dummy start, state end_pos 1 is the first real assignment
 
         // End position is exclusive
 
-        while eval.position > 0
+        while eval.end_position > 0
             {
-            if eval.intron!=HmmIntron::None // Break region if current state contains an intron or ...
+            if eval.state.get_annotation_label()!=eval.previous_state.get_annotation_label() // If prev state changes annotation label
                 {
-                regions.push(HmmStateRegion::new(eval.position-1, region_end_pos-1, eval.state.get_annotation_label()));
-
-                let intron_start = eval.position - eval.intron.len();
-                let intron_end = eval.position - 1;
-                regions.push(HmmStateRegion::new(intron_start-1, intron_end-1, HmmAnnotationLabel::Intron));
-
-                region_end_pos = intron_start;
-                }
-            else if eval.state.get_annotation_label()!=eval.previous_state.get_annotation_label() // ... if next state changes annotation label
-                {
-                regions.push(HmmStateRegion::new(eval.position-1, region_end_pos-1, eval.state.get_annotation_label()));
-                region_end_pos = eval.position;
+                regions.push(HmmStateRegion::new(eval.start_position, region_end_pos, eval.state.get_annotation_label()));
+                region_end_pos = eval.start_position;
                 }
 
-            let prev_position = eval.position - 1;
+            let prev_position = eval.start_position;
             let idx = prev_position * HMM_STATES + (eval.previous_state as usize);
 
 
@@ -1116,9 +1190,30 @@ Chr1    phytozomev10    CDS     31382   31424   .       -       1       ID=AT1G0
 
 
 
+Chr1    HelixerPost     gene    23136   31200   .       +       .       ID=Athaliana_Chr1_000002
+Chr1    HelixerPost     mRNA    23136   31200   .       +       .       ID=Athaliana_Chr1_000002.1;Parent=Athaliana_Chr1_000002
+
+Chr1    HelixerPost     exon    23136   23265   .       +       .       ID=Athaliana_Chr1_000002.1.exon.1;Parent=Athaliana_Chr1_000002.1
+Chr1    HelixerPost     five_prime_UTR  23136   23264   .       +       .       ID=Athaliana_Chr1_000002.1.five_prime_UTR.1;Parent=Athaliana_Chr1_000002.1
+Chr1    HelixerPost     CDS     23265   23265   .       +       0       ID=Athaliana_Chr1_000002.1.CDS.1;Parent=Athaliana_Chr1_000002.1
+
+Chr1    HelixerPost     exon    23267   23339   .       +       .       ID=Athaliana_Chr1_000002.1.exon.2;Parent=Athaliana_Chr1_000002.1
+Chr1    HelixerPost     CDS     23267   23339   .       +       2       ID=Athaliana_Chr1_000002.1.CDS.2;Parent=Athaliana_Chr1_000002.1
+Chr1    HelixerPost     exon    23515   24451   .       +       .       ID=Athaliana_Chr1_000002.1.exon.3;Parent=Athaliana_Chr1_000002.1
+Chr1    HelixerPost     CDS     23515   24451   .       +       1       ID=Athaliana_Chr1_000002.1.CDS.3;Parent=Athaliana_Chr1_000002.1
 
 
 
+
+
+Chr1    HelixerPost     mRNA    23136   31200   .       +       .       ID=Athaliana_Chr1_000002.1;Parent=Athaliana_Chr1_000002
+Chr1    HelixerPost     exon    23136   23344   .       +       .       ID=Athaliana_Chr1_000002.1.exon.1;Parent=Athaliana_Chr1_000002.1
+Chr1    HelixerPost     five_prime_UTR  23136   23344   .       +       .       ID=Athaliana_Chr1_000002.1.five_prime_UTR.1;Parent=Athaliana_Chr1_000002.1
+Chr1    HelixerPost     exon    23515   24451   .       +       .       ID=Athaliana_Chr1_000002.1.exon.2;Parent=Athaliana_Chr1_000002.1
+Chr1    HelixerPost     five_prime_UTR  23515   23524   .       +       .       ID=Athaliana_Chr1_000002.1.five_prime_UTR.2;Parent=Athaliana_Chr1_000002.1
+Chr1    HelixerPost     CDS     23525   24451   .       +       0       ID=Athaliana_Chr1_000002.1.CDS.1;Parent=Athaliana_Chr1_000002.1
+Chr1    HelixerPost     exon    24546   24655   .       +       .       ID=Athaliana_Chr1_000002.1.exon.3;Parent=Athaliana_Chr1_000002.1
+Chr1    HelixerPost     CDS     24546   24655   .       +       0       ID=Athaliana_Chr1_000002.1.CDS.2;Parent=Athaliana_Chr1_000002.1
 
 
 
