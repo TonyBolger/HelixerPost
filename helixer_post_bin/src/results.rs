@@ -12,7 +12,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 use self::raw::{RawHelixerPredictions, RawHelixerGenome};
 use self::index::HelixerIndex;
 use crate::results::iter::{BlockedDataset2D, BlockedDataset1D};
-use crate::results::conv::{Prediction, Bases, Annotation, Transitions};
+use crate::results::conv::{ClassPrediction, Bases, Annotation, Transitions, PhasePrediction};
 
 
 pub struct HelixerResults
@@ -76,10 +76,16 @@ impl HelixerResults
 
     // Wrapped dataset accessors for large datasets, delegate smaller datasets to standard collection convertors
 
-    pub fn get_predictions(&self) -> Result<BlockedDataset2D<f32, Prediction>>
+    pub fn get_class_predictions(&self) -> Result<BlockedDataset2D<f32, ClassPrediction>>
     {
-        Ok(BlockedDataset2D::new(&self.index, self.predictions.get_predictions_raw()?))
+        Ok(BlockedDataset2D::new(&self.index, self.predictions.get_class_raw()?))
     }
+
+    pub fn get_phase_predictions(&self) -> Result<BlockedDataset2D<f32, PhasePrediction>>
+    {
+        Ok(BlockedDataset2D::new(&self.index, self.predictions.get_phase_raw()?))
+    }
+
 
     pub fn get_x(&self) -> Result<BlockedDataset2D<f32, Bases>>
     {

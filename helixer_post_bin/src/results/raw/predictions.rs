@@ -8,8 +8,8 @@ pub struct RawHelixerPredictions
     predictions_file: File
 }
 
-
-const PREDICTIONS_DATASIZE: usize = 4;
+const CLASS_DATASIZE: usize = 4;
+const PHASE_DATASIZE: usize = 4;
 
 impl RawHelixerPredictions
 {
@@ -19,7 +19,7 @@ impl RawHelixerPredictions
         Ok(RawHelixerPredictions { predictions_file })
     }
 
-    pub fn get_predictions_raw(&self) -> Result<Dataset>
+    pub fn get_class_raw(&self) -> Result<Dataset>
     {
         let pred_dataset = self.predictions_file.dataset("predictions")?;
 
@@ -27,15 +27,37 @@ impl RawHelixerPredictions
         if shape.len()!=3
             { return Err(Error::MismatchedDimensions(shape.len(), 3)); }
 
-        if shape[2]!= PREDICTIONS_DATASIZE
-            { return Err(Error::MismatchedDataSize(shape[2], PREDICTIONS_DATASIZE)); }
+        if shape[2]!= CLASS_DATASIZE
+            { return Err(Error::MismatchedDataSize(shape[2], CLASS_DATASIZE)); }
 
         Ok(pred_dataset)
     }
 
+    pub fn get_phase_raw(&self) -> Result<Dataset>
+    {
+        let phase_dataset = self.predictions_file.dataset("predictions_phase")?;
+
+        let shape = phase_dataset.shape();
+        if shape.len()!=3
+            { return Err(Error::MismatchedDimensions(shape.len(), 3)); }
+
+        let (blocks, blocksize) = self.get_blocks_and_blocksize()?;
+
+        if shape[0]!= blocks
+            { return Err(Error::MismatchedBlockCount(shape[0], blocks)); }
+
+        if shape[1]!= blocksize
+            { return Err(Error::MismatchedDataSize(shape[1], blocksize)); }
+
+        if shape[2]!= PHASE_DATASIZE
+            { return Err(Error::MismatchedDataSize(shape[2], PHASE_DATASIZE)); }
+
+        Ok(phase_dataset)
+    }
+
     pub fn get_blocks_and_blocksize(&self) -> Result<(usize, usize)>
     {
-        let pred_dataset = self.get_predictions_raw()?;
+        let pred_dataset = self.get_class_raw()?;
         let shape = pred_dataset.shape();
 
         let blocks = shape[0];

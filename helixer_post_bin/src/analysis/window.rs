@@ -1,5 +1,5 @@
 use crate::analysis::BasePredictionIterator;
-use crate::results::conv::{Bases, Prediction};
+use crate::results::conv::{Bases, ClassPrediction, PhasePrediction};
 use std::collections::VecDeque;
 use std::collections::vec_deque::Iter;
 
@@ -11,7 +11,7 @@ pub struct BasePredictionWindow<'a>
     scale: f32,
     window_total: u64,
 
-    window: VecDeque<(Bases, Prediction)>,
+    window: VecDeque<(Bases, ClassPrediction, PhasePrediction)>,
     position: usize
 }
 
@@ -38,10 +38,10 @@ impl<'a> BasePredictionWindow<'a>
     {
         let maybe_next = self.bp_iter.next();
 
-        if let Some((bases, pred)) = maybe_next
+        if let Some((bases, class_pred, phase_pred)) = maybe_next
         {
-            self.window_total+= (pred.get_genic() * self.scale) as u64;
-            self.window.push_back((bases, pred));
+            self.window_total+= (class_pred.get_genic() * self.scale) as u64;
+            self.window.push_back((bases, class_pred, phase_pred));
             true
         }
         else
@@ -49,13 +49,13 @@ impl<'a> BasePredictionWindow<'a>
 
     }
 
-    fn pop(&mut self) -> Option<(Bases, Prediction)>
+    fn pop(&mut self) -> Option<(Bases, ClassPrediction, PhasePrediction)>
     {
         let maybe_next = self.window.pop_front();
 
-        if let Some((_bases, pred)) = &maybe_next
+        if let Some((_bases, class_pred, _phase_pred)) = &maybe_next
         {
-            self.window_total -= (pred.get_genic() * self.scale) as u64;
+            self.window_total -= (class_pred.get_genic() * self.scale) as u64;
             self.position+=1;
         }
 
@@ -66,7 +66,7 @@ impl<'a> BasePredictionWindow<'a>
 
     pub fn is_window_full(&self) -> bool { self.window.len()==self.window_size }
 
-    pub fn get_window_iter(&self) -> Iter<(Bases, Prediction)> { self.window.iter() }
+    pub fn get_window_iter(&self) -> Iter<(Bases, ClassPrediction, PhasePrediction)> { self.window.iter() }
 }
 
 
@@ -98,7 +98,7 @@ impl<'a> BasePredictionWindowThresholdScanner<'a>
         self.bp_window.is_window_full()
     }
 
-    fn accumulate_above_threshold(&mut self) -> (Vec<(Bases, Prediction)>, Vec<u64>, usize, u64)
+    fn accumulate_above_threshold(&mut self) -> (Vec<(Bases, ClassPrediction, PhasePrediction)>, Vec<u64>, usize, u64)
     {
         let mut accum=Vec::new();
         let mut total_accum=Vec::new();
@@ -115,14 +115,14 @@ impl<'a> BasePredictionWindowThresholdScanner<'a>
             total_accum.push(total);
             peak = std::cmp::max(peak, total);
 
-            let (bases, pred) = self.bp_window.pop().unwrap();
-            accum.push((bases, pred));
+            let (bases, class_pred, phase_pred) = self.bp_window.pop().unwrap();
+            accum.push((bases, class_pred, phase_pred));
 
             self.bp_window.push();
         }
 
-        for (b,p) in self.bp_window.get_window_iter()
-        { accum.push((*b, *p)) }
+        for (b,cp, pp) in self.bp_window.get_window_iter()
+        { accum.push((*b, *cp, *pp)) }
 
         if self.bp_window.is_window_full()  // If window is still full, the last element crossed below the threshold, remove it
         { accum.pop(); }
@@ -164,7 +164,7 @@ impl<'a> BasePredictionWindowThresholdIterator<'a>
 
 impl<'a> Iterator for BasePredictionWindowThresholdIterator<'a>
 {
-    type Item = (Vec<(Bases, Prediction)>, Vec<u64>, usize, f32);
+    type Item = (Vec<(Bases, ClassPrediction, PhasePrediction)>, Vec<u64>, usize, f32);
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {

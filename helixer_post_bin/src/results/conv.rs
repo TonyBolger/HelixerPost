@@ -6,12 +6,12 @@ pub trait ArrayConv<T>
 }
 
 #[derive(Clone, Copy)]
-pub struct Prediction
+pub struct ClassPrediction
 {
     values: [f32; 4] // Ordering is intergenic, utr, coding, intron
 }
 
-impl Prediction
+impl ClassPrediction
 {
     pub fn get(&self) -> &[f32;4] { &self.values }
 
@@ -26,13 +26,46 @@ impl Prediction
     pub fn get_genic(&self) -> f32 { 1.0 - self.values[0] }
 }
 
-impl ArrayConv<f32> for Prediction
+impl ArrayConv<f32> for ClassPrediction
 {
     fn conv(array: ArrayView1<'_, f32>) -> Self {
         let values: [f32;4] = [ array[0], array[1], array[2], array[3] ];
-        Prediction { values }
+        ClassPrediction { values }
     }
 }
+
+
+#[derive(Clone, Copy)]
+pub struct PhasePrediction
+{
+    values: [f32; 4] // Ordering is non_coding, phase 0, phase 1, phase 2
+}
+
+impl PhasePrediction
+{
+    pub fn get(&self) -> &[f32;4] { &self.values }
+
+    pub fn get_non_coding(&self) -> f32 { self.values[0] }
+
+    pub fn get_phase0(&self) -> f32 { self.values[1] }
+
+    pub fn get_phase1(&self) -> f32 { self.values[2] }
+
+    pub fn get_phase2(&self) -> f32 { self.values[3] }
+}
+
+impl ArrayConv<f32> for PhasePrediction
+{
+    fn conv(array: ArrayView1<'_, f32>) -> Self {
+        let values: [f32;4] = [ array[0], array[1], array[2], array[3] ];
+        PhasePrediction { values }
+    }
+}
+
+
+
+
+
 
 #[derive(Clone, Copy)]
 pub struct Bases

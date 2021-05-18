@@ -1,6 +1,6 @@
 use crate::results::{SequenceID, SpeciesID, HelixerResults, Result};
 use std::ops::Range;
-use crate::results::conv::{Prediction, Bases};
+use crate::results::conv::{ClassPrediction, Bases, PhasePrediction};
 use crate::results::iter::{BlockedDataset2D, BlockedDataset2DIter};
 
 pub mod gff_conv;
@@ -50,7 +50,9 @@ pub struct BasePredictionExtractor<'a>
     helixer_res: &'a HelixerResults,
 
     bases_blocked_dataset: BlockedDataset2D<'a, f32, Bases>,
-    pred_blocked_dataset: BlockedDataset2D<'a, f32, Prediction>,
+
+    class_pred_blocked_dataset: BlockedDataset2D<'a, f32, ClassPrediction>,
+    phase_pred_blocked_dataset: BlockedDataset2D<'a, f32, PhasePrediction>,
 }
 
 impl<'a> BasePredictionExtractor<'a>
@@ -58,9 +60,10 @@ impl<'a> BasePredictionExtractor<'a>
     pub fn new(helixer_res: &'a HelixerResults) -> Result<BasePredictionExtractor<'a>>
     {
         let bases_blocked_dataset = helixer_res.get_x()?;
-        let pred_blocked_dataset = helixer_res.get_predictions()?;
+        let class_pred_blocked_dataset = helixer_res.get_class_predictions()?;
+        let phase_pred_blocked_dataset = helixer_res.get_phase_predictions()?;
 
-        Ok( BasePredictionExtractor { helixer_res, bases_blocked_dataset, pred_blocked_dataset } )
+        Ok( BasePredictionExtractor { helixer_res, bases_blocked_dataset, class_pred_blocked_dataset, phase_pred_blocked_dataset } )
     }
 
     pub fn fwd_iterator(&'a self, sequence_id: SequenceID) -> BasePredictionIterator<'a>
@@ -68,9 +71,10 @@ impl<'a> BasePredictionExtractor<'a>
         let sequence = self.helixer_res.get_index().get_sequence_by_id(sequence_id);
 
         let base_iter = self.bases_blocked_dataset.fwd_iter(sequence_id);
-        let pred_iter = self.pred_blocked_dataset.fwd_iter(sequence_id);
+        let class_pred_iter = self.class_pred_blocked_dataset.fwd_iter(sequence_id);
+        let phase_pred_iter = self.phase_pred_blocked_dataset.fwd_iter(sequence_id);
 
-        BasePredictionIterator::new(self, sequence.get_species_id(), sequence_id, false, base_iter, pred_iter)
+        BasePredictionIterator::new(self, sequence.get_species_id(), sequence_id, false, base_iter, class_pred_iter, phase_pred_iter)
     }
 
     pub fn rev_iterator(&'a self, sequence_id: SequenceID) -> BasePredictionIterator<'a>
@@ -78,9 +82,10 @@ impl<'a> BasePredictionExtractor<'a>
         let sequence = self.helixer_res.get_index().get_sequence_by_id(sequence_id);
 
         let base_iter = self.bases_blocked_dataset.rev_iter(sequence_id);
-        let pred_iter = self.pred_blocked_dataset.rev_iter(sequence_id);
+        let class_pred_iter = self.class_pred_blocked_dataset.rev_iter(sequence_id);
+        let phase_pred_iter = self.phase_pred_blocked_dataset.rev_iter(sequence_id);
 
-        BasePredictionIterator::new(self, sequence.get_species_id(), sequence_id, true, base_iter, pred_iter)
+        BasePredictionIterator::new(self, sequence.get_species_id(), sequence_id, true, base_iter, class_pred_iter, phase_pred_iter)
     }
 }
 
@@ -94,15 +99,17 @@ pub struct BasePredictionIterator<'a>
     rc: bool,
 
     base_iter: BlockedDataset2DIter<'a, f32, Bases>,
-    pred_iter: BlockedDataset2DIter<'a, f32, Prediction>,
+
+    class_pred_iter: BlockedDataset2DIter<'a, f32, ClassPrediction>,
+    phase_pred_iter: BlockedDataset2DIter<'a, f32, PhasePrediction>,
 }
 
 impl<'a> BasePredictionIterator<'a>
 {
-    fn new(extractor: &'a BasePredictionExtractor<'a>, species_id: SpeciesID, sequence_id: SequenceID, rc: bool,
-           base_iter: BlockedDataset2DIter<'a, f32, Bases>, pred_iter: BlockedDataset2DIter<'a, f32, Prediction>) -> BasePredictionIterator<'a>
+    fn new(extractor: &'a BasePredictionExtractor<'a>, species_id: SpeciesID, sequence_id: SequenceID, rc: bool, base_iter: BlockedDataset2DIter<'a, f32, Bases>,
+           class_pred_iter: BlockedDataset2DIter<'a, f32, ClassPrediction>, phase_pred_iter: BlockedDataset2DIter<'a, f32, PhasePrediction>) -> BasePredictionIterator<'a>
     {
-        BasePredictionIterator { extractor, species_id, sequence_id, rc, base_iter, pred_iter }
+        BasePredictionIterator { extractor, species_id, sequence_id, rc, base_iter, class_pred_iter, phase_pred_iter }
     }
 
     pub fn get_extractor(&self) -> &BasePredictionExtractor { self.extractor }
@@ -116,23 +123,25 @@ impl<'a> BasePredictionIterator<'a>
 
 impl<'a> Iterator for BasePredictionIterator<'a>
 {
-    type Item = (Bases, Prediction);
+    type Item = (Bases, ClassPrediction, PhasePrediction);
 
     fn next(&mut self) -> Option<Self::Item>
         {
             let bases = self.base_iter.next();
-            let pred = self.pred_iter.next();
+            let class_pred = self.class_pred_iter.next();
+            let phase_pred = self.phase_pred_iter.next();
 
-            if bases.is_none() && pred.is_none()
+            if bases.is_none() && class_pred.is_none() && phase_pred.is_none()
                 { return None }
 
-            if bases.is_none() || pred.is_none()
-                { panic!("Different lengths in base/pred iterators") }
+            if bases.is_none() || class_pred.is_none() || phase_pred.is_none()
+                { panic!("Different lengths in base/class_pred/phase_pred iterators") }
 
             let bases = bases.expect("Unexpected end of base iter");
-            let pred = pred.expect("Unexpected end of base iter");
+            let class_pred = class_pred.expect("Unexpected end of class_pred iter");
+            let phase_pred = phase_pred.expect("Unexpected end of phase_pred iter");
 
-            return Some((bases, pred))
+            return Some((bases, class_pred, phase_pred))
         }
 }
 

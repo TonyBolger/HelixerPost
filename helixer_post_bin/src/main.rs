@@ -3,7 +3,7 @@ use std::process::exit;
 use helixer_post_bin::results::{HelixerResults, Sequence, Species};
 use helixer_post_bin::analysis::BasePredictionExtractor;
 use helixer_post_bin::analysis::window::BasePredictionWindowThresholdIterator;
-use helixer_post_bin::analysis::hmm::PredictionHmm;
+use helixer_post_bin::analysis::hmm::{PredictionHmm, show_config};
 use helixer_post_bin::gff::GffWriter;
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -35,6 +35,8 @@ fn write_extractor_as_gff<W: Write>(extractor: &BasePredictionExtractor,
 
         if let Some(solution) = maybe_solution
             {
+            //solution.dump(start_pos);
+
             let gff_records = hmm_solution_to_gff(&solution, species.get_name(), seq.get_name(), "HelixerPost",
                                               false, start_pos, seq.get_length(), &mut gene_idx);
             gff_writer.write_records(&gff_records).expect("Failed to write to GFF");
@@ -94,6 +96,8 @@ fn main()
 
     let mut total_count = 0;
     let mut total_length = 0;
+
+    show_config();
 
     let gff_file = File::create(gff_filename).unwrap();
     let mut gff_writer = GffWriter::new(BufWriter::new(gff_file));
