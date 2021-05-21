@@ -9,12 +9,16 @@ cd h5py-3.2.1/lzf/
 
 ### Fedora
 gcc -O2 -fPIC -shared -Ilzf lzf/*.c lzf_filter.c -lhdf5 -o liblzf_filter.so
+
 sudo mkdir -p /usr/local/hdf5/lib/plugin
+
 sudo cp liblzf_filter.so /usr/local/hdf5/lib/plugin
 
 ### Ubuntu
 gcc -O2 -fPIC -shared -Ilzf -I/usr/include/hdf5/serial/ lzf/*.c lzf_filter.c -lhdf5 -L/lib/x86_64-linux-gnu/hdf5/serial -o liblzf_filter.so
+
 sudo mkdir /usr/lib/x86_64-linux-gnu/hdf5/plugins
+
 sudo cp liblzf_filter.so /usr/lib/x86_64-linux-gnu/hdf5/plugins
 
 
