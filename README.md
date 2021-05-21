@@ -25,7 +25,10 @@ sudo cp liblzf_filter.so /usr/lib/x86_64-linux-gnu/hdf5/plugins
 
 
 ## Usage
-One Step Build & Run: From the main directory `cargo run` 
+
+### One Step 
+
+Build & Run: From the main directory `cargo run` 
 
 Using 100bp sliding window for genic detection, 0.1 edge threshold, 0.8 peak threshold (before HMM)
 
@@ -33,9 +36,10 @@ Using 100bp sliding window for genic detection, 0.1 edge threshold, 0.8 peak thr
 
 cargo run --release genome_data.h5 predictions.h5 100 0.1 0.8 60 output.gff
 
-Two Step: 
+### Two Step: 
 
 carbo build --release
+
 ./target/release/helixer_post_bin genome_data.h5 predictions.h5 100 0.1 0.8 60 output.gff
 
 
