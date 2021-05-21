@@ -158,7 +158,8 @@ fn convert_regions_to_gff(regions: Vec<HmmStateRegion>, sequence: &str, source: 
 }
 
 
-pub fn hmm_solution_to_gff(solution: &PredictionHmmSolution, species: &str, sequence: &str, source: &str, rev: bool, position: usize, sequence_length: u64, gene_idx: &mut usize) -> Vec<GffRecord>
+pub fn hmm_solution_to_gff(solution: &PredictionHmmSolution, species: &str, sequence: &str, source: &str,
+                           rev: bool, position: usize, sequence_length: u64, min_coding_length: usize, gene_idx: &mut usize) -> Vec<GffRecord>
 {
     let all_regions = solution.trace_regions();
     let genes = PredictionHmmSolution::split_genes(all_regions);
@@ -170,16 +171,18 @@ pub fn hmm_solution_to_gff(solution: &PredictionHmmSolution, species: &str, sequ
 
     let strand = Some(GffStrand::Forward); // Initially generate everything as forward
 
-    for gene_regions in genes
-    {
-        let gene_name = format!("{}_{}_{:06}", species, sequence, *gene_idx);
-        let gene_gff_recs = convert_regions_to_gff(gene_regions, sequence, source, strand, position, &gene_name);
-        let gene_gff_recs = generate_gff_aggregate_records(gene_gff_recs, sequence, source, strand, &gene_name);
+    for (gene_regions, coding_length) in genes
+        {
+        if coding_length >= min_coding_length
+            {
+            let gene_name = format!("{}_{}_{:06}", species, sequence, *gene_idx);
+            let gene_gff_recs = convert_regions_to_gff(gene_regions, sequence, source, strand, position, &gene_name);
+            let gene_gff_recs = generate_gff_aggregate_records(gene_gff_recs, sequence, source, strand, &gene_name);
 
-        all_gff_recs.extend(gene_gff_recs);
-
-        *gene_idx += 1;
-    }
+            all_gff_recs.extend(gene_gff_recs);
+            *gene_idx += 1;
+            }
+        }
 
     if rev
     {

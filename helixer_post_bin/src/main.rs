@@ -11,7 +11,8 @@ use helixer_post_bin::analysis::gff_conv::hmm_solution_to_gff;
 
 
 fn write_extractor_as_gff<W: Write>(extractor: &BasePredictionExtractor,
-                                    species: &Species, seq: &Sequence, window_size: usize, edge_threshold: f32, peak_threshold: f32, gff_writer: &mut GffWriter<W>) -> (usize, usize)
+                                    species: &Species, seq: &Sequence, window_size: usize, edge_threshold: f32, peak_threshold: f32,
+                                    min_coding_length: usize,  gff_writer: &mut GffWriter<W>) -> (usize, usize)
 {
     let id = seq.get_id();
     println!("  BP_Extractor for Sequence {} - ID {}", seq.get_name(), id.inner());
@@ -38,7 +39,7 @@ fn write_extractor_as_gff<W: Write>(extractor: &BasePredictionExtractor,
             //solution.dump(start_pos);
 
             let gff_records = hmm_solution_to_gff(&solution, species.get_name(), seq.get_name(), "HelixerPost",
-                                              false, start_pos, seq.get_length(), &mut gene_idx);
+                                              false, start_pos, seq.get_length(), min_coding_length, &mut gene_idx);
             gff_writer.write_records(&gff_records).expect("Failed to write to GFF");
             }
         else
@@ -61,7 +62,7 @@ fn write_extractor_as_gff<W: Write>(extractor: &BasePredictionExtractor,
         if let Some(solution) = maybe_solution
             {
             let gff_records = hmm_solution_to_gff(&solution, species.get_name(), seq.get_name(), "HelixerPost",
-                                                  true, start_pos, seq.get_length(), &mut gene_idx);
+                                                  true, start_pos, seq.get_length(), min_coding_length, &mut gene_idx);
             gff_writer.write_records(&gff_records).expect("Failed to write to GFF");
             }
          else
@@ -77,9 +78,9 @@ fn main()
 {
     let arg_vec = std::env::args().collect::<Vec<_>>(); // Arg iterator into vector
 
-    if arg_vec.len() != 7
+    if arg_vec.len() != 8
     {
-        println!("HelixerPost <genome.h5> <predictions.h5> <windowSize> <edgeThresh> <peakThresh> <gff>");
+        println!("HelixerPost <genome.h5> <predictions.h5> <windowSize> <edgeThresh> <peakThresh> <minCodingLength> <gff>");
         exit(1);
     }
 
@@ -88,7 +89,8 @@ fn main()
     let window_size = arg_vec[3].parse().unwrap();
     let edge_threshold = arg_vec[4].parse().unwrap();
     let peak_threshold = arg_vec[5].parse().unwrap();
-    let gff_filename = &arg_vec[6];
+    let min_coding_length = arg_vec[6].parse().unwrap();
+    let gff_filename = &arg_vec[7];
 
     let helixer_res = HelixerResults::new(predictions_path.as_ref(), genome_path.as_ref()).unwrap();
 
@@ -111,7 +113,8 @@ fn main()
             let seq = helixer_res.get_sequence_by_id(*seq_id);
 
 //            dump_seq(&helixer_res, seq);
-            let (count, length) = write_extractor_as_gff(&extractor, species, seq, window_size, edge_threshold, peak_threshold, &mut gff_writer);
+            let (count, length) = write_extractor_as_gff(&extractor, species, seq,
+                                                         window_size, edge_threshold, peak_threshold, min_coding_length, &mut gff_writer);
 
             total_count+=count;
             total_length+=length;

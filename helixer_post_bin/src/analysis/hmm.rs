@@ -68,8 +68,8 @@ impl PhasePredPenalty
     pub fn get_phase2_penalty(&self) -> f64 { self.penalty[3] }
 }
 
-//const PHASE_PRED_PROB_FLOOR: f64 = 0.000_000_001; // Prevent infinite penalties
-const PHASE_PRED_PROB_FLOOR: f64 = 0.5; // Limit impact of incorrect phase
+const PHASE_PRED_PROB_FLOOR: f64 = 0.000_000_001; // Prevent infinite penalties
+//const PHASE_PRED_PROB_FLOOR: f64 = 0.5; // Limit impact of incorrect phase
 
 impl From<&PhasePrediction> for PhasePredPenalty
 {
@@ -120,7 +120,7 @@ impl PredPenalty
     pub fn get_intron_penalty(&self) -> f64 { self.penalty[5] }
 }
 
-const PHASE_RETAIN: f64 = 1.0;      // Adjust as needed
+const PHASE_RETAIN: f64 = 0.2;      // Adjust as needed
 
 const PHASE_DILUTE: f64 = 1.0 - PHASE_RETAIN;
 const PRED_PROB_FLOOR: f64 =  0.000_000_001; // Prevent infinite penalties
@@ -510,6 +510,8 @@ pub fn show_config()
 
     println!("  Splicing - Fixed Penalty: Donor {}, Weights: Donor {}, Acceptor {}", DONOR_FIXED_PENALTY, DONOR_WEIGHT, ACCEPTOR_WEIGHT);
     println!("  Coding - Weights: Start {}, Stop {}", START_WEIGHT, STOP_WEIGHT);
+    //println!("  Phase Mode: Off");
+    //println!("  Phase Mode: Additive, with {} prob floor", PHASE_PRED_PROB_FLOOR);
     println!("  Phase Mode: Implementation 1, Dilute to Total, Retention: {}", PHASE_RETAIN);
     println!();
 }
@@ -567,20 +569,25 @@ impl HmmState
         }
     }
 
-
     fn get_state_penalty(self, class_pred: &ClassPredPenalty, phase_pred: &PhasePredPenalty, pred: &PredPenalty) -> f64
     {
-        fn coding_phase0(_class_pred: &ClassPredPenalty, _phase_pred: &PhasePredPenalty, pred: &PredPenalty) -> f64 {
+        #[allow(unused_variables)]
+        fn coding_phase0(class_pred: &ClassPredPenalty, phase_pred: &PhasePredPenalty, pred: &PredPenalty) -> f64 {
+            //class_pred.get_coding_penalty()
             //class_pred.get_coding_penalty() + phase_pred.get_phase0_penalty()
             pred.get_coding_phase0_penalty()
         }
 
-        fn coding_phase1(_class_pred: &ClassPredPenalty, _phase_pred: &PhasePredPenalty, pred: &PredPenalty) -> f64 {
+        #[allow(unused_variables)]
+        fn coding_phase1(class_pred: &ClassPredPenalty, phase_pred: &PhasePredPenalty, pred: &PredPenalty) -> f64 {
+            //class_pred.get_coding_penalty()
             //class_pred.get_coding_penalty() + phase_pred.get_phase1_penalty()
             pred.get_coding_phase1_penalty()
         }
 
-        fn coding_phase2(_class_pred: &ClassPredPenalty, _phase_pred: &PhasePredPenalty, pred: &PredPenalty) -> f64 {
+        #[allow(unused_variables)]
+        fn coding_phase2(class_pred: &ClassPredPenalty, phase_pred: &PhasePredPenalty, pred: &PredPenalty) -> f64 {
+            //class_pred.get_coding_penalty()
             //class_pred.get_coding_penalty() + phase_pred.get_phase2_penalty()
             pred.get_coding_phase2_penalty()
         }
@@ -733,10 +740,13 @@ impl HmmState
 
              HmmState::Start2 =>
                     {
-                    successors.push((HmmState::Coding0, 0.0));
-
                     if let Some(ds) = trans_ctx.get_downstream(1)
-                        { successors.push((HmmState::Stop0T, ds[0].get_t()*STOP_WEIGHT)); }
+                        {
+                        successors.push((HmmState::Coding0, ds[0].get_a()*STOP_WEIGHT));
+                        successors.push((HmmState::Coding0, ds[0].get_c()*STOP_WEIGHT));
+                        successors.push((HmmState::Coding0, ds[0].get_g()*STOP_WEIGHT));
+                        successors.push((HmmState::Stop0T, ds[0].get_t()*STOP_WEIGHT));
+                        }
 
                     if let Some(donor_penalty) = trans_ctx.get_donor_penalty_ag_gt(CAN_SPLICE_START_CODING)
                         { successors.push((HmmState::Coding2IntronDSS, donor_penalty)); }
@@ -798,12 +808,14 @@ impl HmmState
                     {
                     successors.push((HmmState::Coding2Intron, 0.0));
 
-                    if let Some(acceptor_penalty) = trans_ctx.get_acceptor_penalty_ag_g()
+                    if let (Some(acceptor_penalty), Some(ds)) = (trans_ctx.get_acceptor_penalty_ag_g(), trans_ctx.get_downstream(1))
                         {
-                        successors.push((HmmState::Coding0, acceptor_penalty));
+                        successors.push((HmmState::Coding0, ds[0].get_a()*STOP_WEIGHT));
+                        successors.push((HmmState::Coding0, ds[0].get_c()*STOP_WEIGHT));
+                        successors.push((HmmState::Coding0, ds[0].get_g()*STOP_WEIGHT));
 
-                        if let (Some(ds), true) = (trans_ctx.get_downstream(1), CAN_SPLICE_CODING_STOP)
-                            { successors.push((HmmState::Stop0T, ds[0].get_t()*STOP_WEIGHT+acceptor_penalty)); }
+                        if CAN_SPLICE_CODING_STOP
+                            { successors.push((HmmState::Stop0T, ds[0].get_t() * STOP_WEIGHT + acceptor_penalty)); }
                         }
                     },
 
@@ -1183,29 +1195,35 @@ impl PredictionHmmSolution
     }
 
 
-    pub fn split_genes(regions: Vec<HmmStateRegion>) -> Vec<Vec<HmmStateRegion>>
+    pub fn split_genes(regions: Vec<HmmStateRegion>) -> Vec<(Vec<HmmStateRegion>, usize)>
     {
         let mut vec_of_vecs = Vec::new();
 
         let mut current_vec = Vec::new();
+        let mut coding_length = 0;
+
         for region in regions
             {
             if region.annotation_label == HmmAnnotationLabel::Intergenic
                 {
                 if current_vec.len()>0
                     {
-                    vec_of_vecs.push(current_vec);
+                    vec_of_vecs.push((current_vec, coding_length));
                     current_vec=Vec::new();
+                    coding_length = 0;
                     }
                 }
             else
                 {
+                if region.annotation_label == HmmAnnotationLabel::Coding
+                    {  coding_length+= region.end_pos - region.start_pos; }
+
                 current_vec.push(region);
                 }
             }
 
         if current_vec.len()>0
-            { vec_of_vecs.push(current_vec); }
+            { vec_of_vecs.push((current_vec, coding_length)); }
 
         vec_of_vecs
     }
