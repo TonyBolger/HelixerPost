@@ -5,6 +5,7 @@ On fedora & co. you will need `hdf5-devel`, while on ubuntu & co. you will need 
 Currently it's also necessary to manually build the 'lzf' compression support from h5py (https://pypi.org/project/h5py/) as a shared library and install to the hdf5 plugins directory
 
 tar -xzvf h5py-3.2.1.tar.gz 
+
 cd h5py-3.2.1/lzf/
 
 ### Fedora
