@@ -27,8 +27,9 @@ sudo cp liblzf_filter.so /usr/lib/x86_64-linux-gnu/hdf5/plugins
 ## Usage
 One Step Build & Run: From the main directory `cargo run` 
 
-# Using 100bp sliding window for genic detection, 0.1 edge threshold, 0.8 peak threshold (before HMM)
-# 60bp minimum CDS length per gene (after HMM)
+Using 100bp sliding window for genic detection, 0.1 edge threshold, 0.8 peak threshold (before HMM)
+
+60bp minimum CDS length per gene (after HMM)
 
 cargo run --release genome_data.h5 predictions.h5 100 0.1 0.8 60 output.gff
 
