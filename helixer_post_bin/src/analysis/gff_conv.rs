@@ -32,7 +32,7 @@ sequence: String, source: String, feature: GffFeature, start: u64, end: u64, sco
 
 
 use crate::gff::{GffRecord, GffStrand, GffFeature, GffPhase};
-use crate::analysis::hmm::{PredictionHmmSolution, HmmStateRegion, HmmAnnotationLabel};
+use crate::analysis::hmm::{HmmStateRegion, HmmAnnotationLabel};
 
 // generate gene, mRNA and exon records, based on UTR5/CDS/UTR3
 fn generate_gff_aggregate_records(recs: Vec<GffRecord>, sequence: &str, source: &str, strand: Option<GffStrand>, gene_name: &str) -> Vec<GffRecord>
@@ -158,12 +158,9 @@ fn convert_regions_to_gff(regions: Vec<HmmStateRegion>, sequence: &str, source: 
 }
 
 
-pub fn hmm_solution_to_gff(solution: &PredictionHmmSolution, species: &str, sequence: &str, source: &str,
+pub fn hmm_solution_to_gff(genes: Vec<(Vec<HmmStateRegion>, usize)>, species: &str, sequence: &str, source: &str,
                            rev: bool, position: usize, sequence_length: u64, min_coding_length: usize, gene_idx: &mut usize) -> Vec<GffRecord>
 {
-    let all_regions = solution.trace_regions();
-    let genes = PredictionHmmSolution::split_genes(all_regions);
-
 //        if genes.len() > 1
 //            { println!("{} genes at {} in {}", genes.len(), position, sequence); }
 
@@ -187,9 +184,10 @@ pub fn hmm_solution_to_gff(solution: &PredictionHmmSolution, species: &str, sequ
     if rev
     {
         for gff_recs in all_gff_recs.iter_mut()
-        { gff_recs.swap_strand(sequence_length); }
+            { gff_recs.swap_strand(sequence_length); }
     }
 
     all_gff_recs
 }
+
 

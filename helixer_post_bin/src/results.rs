@@ -12,7 +12,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 use self::raw::{RawHelixerPredictions, RawHelixerGenome};
 use self::index::HelixerIndex;
 use crate::results::iter::{BlockedDataset2D, BlockedDataset1D};
-use crate::results::conv::{ClassPrediction, Bases, Annotation, Transitions, PhasePrediction};
+use crate::results::conv::{ClassPrediction, Bases, ClassReference, Transitions, PhasePrediction, PhaseReference};
 
 
 pub struct HelixerResults
@@ -124,9 +124,14 @@ impl HelixerResults
         Ok(BlockedDataset2D::new(&self.index, self.genome.get_transitions_raw()?))
     }
 
-    pub fn get_y(&self) -> Result<BlockedDataset2D<i8, Annotation>>
+    pub fn get_class_reference(&self) -> Result<BlockedDataset2D<i8, ClassReference>>
     {
         Ok(BlockedDataset2D::new(&self.index, self.genome.get_y_raw()?))
+    }
+
+    pub fn get_phase_reference(&self) -> Result<BlockedDataset2D<i8, PhaseReference>>
+    {
+        Ok(BlockedDataset2D::new(&self.index, self.genome.get_phases_raw()?))
     }
 
 }

@@ -24,6 +24,23 @@ impl ClassPrediction
     pub fn get_intron(&self) -> f32 { self.values[3] }
 
     pub fn get_genic(&self) -> f32 { 1.0 - self.values[0] }
+
+    pub fn get_max_idx(&self) -> usize
+    {
+        let mut max=self.values[0];
+        let mut max_idx = 0;
+
+        for i in 1..4
+        {
+            if self.values[i] > max
+            {
+                max = self.values [i];
+                max_idx = i;
+            }
+        }
+
+        max_idx
+    }
 }
 
 impl ArrayConv<f32> for ClassPrediction
@@ -52,6 +69,23 @@ impl PhasePrediction
     pub fn get_phase1(&self) -> f32 { self.values[2] }
 
     pub fn get_phase2(&self) -> f32 { self.values[3] }
+
+    pub fn get_max_idx(&self) -> usize
+    {
+        let mut max=self.values[0];
+        let mut max_idx = 0;
+
+        for i in 1..4
+        {
+            if self.values[i] > max
+            {
+                max = self.values [i];
+                max_idx = i;
+            }
+        }
+
+        max_idx
+    }
 }
 
 impl ArrayConv<f32> for PhasePrediction
@@ -106,21 +140,73 @@ impl ArrayConv<i8> for Transitions
 }
 
 
-
-pub struct Annotation
+pub struct PhaseReference
 {
-    values: [i8; 4] // Ordering is intergenic, utr, coding, intron
+    values: [i8; 4] // Ordering is Non-Coding, Phase 0, Phase 1, Phase2
 }
 
-impl Annotation
+impl PhaseReference
 {
     pub fn get(&self) -> &[i8; 4] { &self.values }
+
+    pub fn get_max_idx(&self) -> usize
+    {
+        let mut max=self.values[0];
+        let mut max_idx = 0;
+
+        for i in 1..4
+        {
+            if self.values[i] > max
+            {
+                max = self.values [i];
+                max_idx = i;
+            }
+        }
+
+        max_idx
+    }
 }
 
-impl ArrayConv<i8> for Annotation
+impl ArrayConv<i8> for PhaseReference
 {
     fn conv(array: ArrayView1<'_, i8>) -> Self {
         let values: [i8;4] = [ array[0], array[1], array[2], array[3] ];
-        Annotation { values }
+        PhaseReference { values }
+    }
+}
+
+
+
+pub struct ClassReference {
+    values: [i8; 4] // Ordering is intergenic, utr, coding, intron
+}
+
+impl ClassReference
+{
+    pub fn get(&self) -> &[i8; 4] { &self.values }
+
+    pub fn get_max_idx(&self) -> usize
+    {
+        let mut max=self.values[0];
+        let mut max_idx = 0;
+
+        for i in 1..4
+            {
+            if self.values[i] > max
+                {
+                max= self.values [i];
+                max_idx = i;
+                }
+            }
+
+        max_idx
+    }
+}
+
+impl ArrayConv<i8> for ClassReference
+{
+    fn conv(array: ArrayView1<'_, i8>) -> Self {
+        let values: [i8;4] = [ array[0], array[1], array[2], array[3] ];
+        ClassReference { values }
     }
 }

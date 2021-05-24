@@ -389,7 +389,7 @@ pub enum HmmAnnotationLabel
 
 impl HmmAnnotationLabel
 {
-    fn to_str(&self) -> &str
+    pub fn to_str(&self) -> &str
     {
         match self
         {
@@ -1143,6 +1143,43 @@ impl HmmStateRegion
     pub fn get_annotation_label(&self) -> HmmAnnotationLabel { self.annotation_label }
 
     pub fn len(&self) -> usize { self.end_pos - self.start_pos }
+
+
+    pub fn split_genes(regions: Vec<HmmStateRegion>) -> Vec<(Vec<HmmStateRegion>, usize)>
+    {
+        let mut vec_of_vecs = Vec::new();
+
+        let mut current_vec = Vec::new();
+        let mut coding_length = 0;
+
+        for region in regions
+        {
+            if region.annotation_label == HmmAnnotationLabel::Intergenic
+            {
+                if current_vec.len()>0
+                {
+                    vec_of_vecs.push((current_vec, coding_length));
+                    current_vec=Vec::new();
+                    coding_length = 0;
+                }
+            }
+            else
+            {
+                if region.annotation_label == HmmAnnotationLabel::Coding
+                {  coding_length+= region.end_pos - region.start_pos; }
+
+                current_vec.push(region);
+            }
+        }
+
+        if current_vec.len()>0
+        { vec_of_vecs.push((current_vec, coding_length)); }
+
+        vec_of_vecs
+    }
+
+
+
 }
 
 
@@ -1192,40 +1229,6 @@ impl PredictionHmmSolution
         regions.reverse();
 
         regions
-    }
-
-
-    pub fn split_genes(regions: Vec<HmmStateRegion>) -> Vec<(Vec<HmmStateRegion>, usize)>
-    {
-        let mut vec_of_vecs = Vec::new();
-
-        let mut current_vec = Vec::new();
-        let mut coding_length = 0;
-
-        for region in regions
-            {
-            if region.annotation_label == HmmAnnotationLabel::Intergenic
-                {
-                if current_vec.len()>0
-                    {
-                    vec_of_vecs.push((current_vec, coding_length));
-                    current_vec=Vec::new();
-                    coding_length = 0;
-                    }
-                }
-            else
-                {
-                if region.annotation_label == HmmAnnotationLabel::Coding
-                    {  coding_length+= region.end_pos - region.start_pos; }
-
-                current_vec.push(region);
-                }
-            }
-
-        if current_vec.len()>0
-            { vec_of_vecs.push((current_vec, coding_length)); }
-
-        vec_of_vecs
     }
 
 

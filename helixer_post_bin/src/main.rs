@@ -1,18 +1,19 @@
 
 use std::process::exit;
 use helixer_post_bin::results::{HelixerResults, Sequence, Species};
-use helixer_post_bin::analysis::BasePredictionExtractor;
+use helixer_post_bin::analysis::{BasePredictionExtractor, ComparisonExtractor};
 use helixer_post_bin::analysis::window::BasePredictionWindowThresholdIterator;
-use helixer_post_bin::analysis::hmm::{PredictionHmm, show_config};
+use helixer_post_bin::analysis::hmm::{PredictionHmm, show_config, HmmStateRegion};
 use helixer_post_bin::gff::GffWriter;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use helixer_post_bin::analysis::gff_conv::hmm_solution_to_gff;
+use helixer_post_bin::analysis::rater::SequenceRater;
 
 
-fn write_extractor_as_gff<W: Write>(extractor: &BasePredictionExtractor,
-                                    species: &Species, seq: &Sequence, window_size: usize, edge_threshold: f32, peak_threshold: f32,
-                                    min_coding_length: usize,  gff_writer: &mut GffWriter<W>) -> (usize, usize)
+fn process_sequence<W: Write>(bp_extractor: &BasePredictionExtractor, comp_extractor: &ComparisonExtractor,
+                              species: &Species, seq: &Sequence, window_size: usize, edge_threshold: f32, peak_threshold: f32,
+                              min_coding_length: usize, gff_writer: &mut GffWriter<W>) -> (usize, usize)
 {
     let id = seq.get_id();
     println!("  BP_Extractor for Sequence {} - ID {}", seq.get_name(), id.inner());
@@ -20,11 +21,12 @@ fn write_extractor_as_gff<W: Write>(extractor: &BasePredictionExtractor,
     let mut window_count = 0;
     let mut window_length_total = 0;
 
-    let fwd_iter =
-        BasePredictionWindowThresholdIterator::new(extractor.fwd_iterator(id), window_size, edge_threshold, peak_threshold).unwrap();
+    let fwd_bp_iter =
+        BasePredictionWindowThresholdIterator::new(bp_extractor.fwd_iterator(id), window_size, edge_threshold, peak_threshold).unwrap();
+    let mut fwd_comp_rater = SequenceRater::new(comp_extractor.fwd_iterator(id), seq.get_length() as usize);
 
     let mut gene_idx = 1;
-    for (bp_vec, _total_vec, start_pos, _peak) in fwd_iter
+    for (bp_vec, _total_vec, start_pos, _peak) in fwd_bp_iter
         {
         window_count+=1;
         window_length_total+=bp_vec.len();
@@ -37,8 +39,13 @@ fn write_extractor_as_gff<W: Write>(extractor: &BasePredictionExtractor,
         if let Some(solution) = maybe_solution
             {
             //solution.dump(start_pos);
+            let solution_regions = solution.trace_regions();
+            let genes = HmmStateRegion::split_genes(solution_regions);
 
-            let gff_records = hmm_solution_to_gff(&solution, species.get_name(), seq.get_name(), "HelixerPost",
+            for (gene_regions,_) in genes.iter()
+                { fwd_comp_rater.rate_regions(start_pos, &gene_regions); }
+
+            let gff_records = hmm_solution_to_gff(genes, species.get_name(), seq.get_name(), "HelixerPost",
                                               false, start_pos, seq.get_length(), min_coding_length, &mut gene_idx);
             gff_writer.write_records(&gff_records).expect("Failed to write to GFF");
             }
@@ -46,22 +53,34 @@ fn write_extractor_as_gff<W: Write>(extractor: &BasePredictionExtractor,
             { panic!("No solution at {} {} - {}", seq.get_name(), start_pos, end_pos); }
         }
 
-    let rev_iter =
-        BasePredictionWindowThresholdIterator::new(extractor.rev_iterator(id), window_size, edge_threshold, peak_threshold).unwrap();
+    let fwd_rating = fwd_comp_rater.calculate_stats();
+    println!("Forward");
+    fwd_rating.dump();
 
-    for (bp_vec, _total_vec, start_pos, _peak) in rev_iter
+    let rev_bp_iter =
+        BasePredictionWindowThresholdIterator::new(bp_extractor.rev_iterator(id), window_size, edge_threshold, peak_threshold).unwrap();
+    let mut rev_comp_rater = SequenceRater::new(comp_extractor.rev_iterator(id), seq.get_length() as usize);
+
+    for (bp_vec, _total_vec, start_pos, _peak) in rev_bp_iter
         {
         window_count+=1;
         window_length_total+=bp_vec.len();
 
         let end_pos = start_pos + bp_vec.len();
+//        rev_comp_rater.rate_window(start_pos, end_pos);
 
         let hmm = PredictionHmm::new(bp_vec);
         let maybe_solution = hmm.solve();
 
         if let Some(solution) = maybe_solution
             {
-            let gff_records = hmm_solution_to_gff(&solution, species.get_name(), seq.get_name(), "HelixerPost",
+            let solution_regions = solution.trace_regions();
+            let genes = HmmStateRegion::split_genes(solution_regions);
+
+            for (gene_regions,_) in genes.iter()
+                { rev_comp_rater.rate_regions(start_pos, &gene_regions); }
+
+            let gff_records = hmm_solution_to_gff(genes, species.get_name(), seq.get_name(), "HelixerPost",
                                                   true, start_pos, seq.get_length(), min_coding_length, &mut gene_idx);
             gff_writer.write_records(&gff_records).expect("Failed to write to GFF");
             }
@@ -69,6 +88,11 @@ fn write_extractor_as_gff<W: Write>(extractor: &BasePredictionExtractor,
             { panic!("No solution at {} {} - {}", seq.get_name(), start_pos, end_pos); }
 
         }
+
+    let rev_rating = rev_comp_rater.calculate_stats();
+
+    println!("Reverse");
+    rev_rating.dump();
 
     (window_count, window_length_total)
 }
@@ -92,9 +116,10 @@ fn main()
     let min_coding_length = arg_vec[6].parse().unwrap();
     let gff_filename = &arg_vec[7];
 
-    let helixer_res = HelixerResults::new(predictions_path.as_ref(), genome_path.as_ref()).unwrap();
+    let helixer_res = HelixerResults::new(predictions_path.as_ref(), genome_path.as_ref()).expect("Failed to open input files");
 
-    let extractor = BasePredictionExtractor::new(&helixer_res).unwrap();
+    let bp_extractor = BasePredictionExtractor::new(&helixer_res).expect("Failed to open Base / ClassPrediction / PhasePrediction Datasets");
+    let comp_extractor = ComparisonExtractor::new(&helixer_res).expect("Failed to open ClassReference / PhaseReference / ClassPrediction / PhasePrediction Datasets");
 
     let mut total_count = 0;
     let mut total_length = 0;
@@ -113,8 +138,8 @@ fn main()
             let seq = helixer_res.get_sequence_by_id(*seq_id);
 
 //            dump_seq(&helixer_res, seq);
-            let (count, length) = write_extractor_as_gff(&extractor, species, seq,
-                                                         window_size, edge_threshold, peak_threshold, min_coding_length, &mut gff_writer);
+            let (count, length) = process_sequence(&bp_extractor, &comp_extractor, species, seq,
+                                                   window_size, edge_threshold, peak_threshold, min_coding_length, &mut gff_writer);
 
             total_count+=count;
             total_length+=length;

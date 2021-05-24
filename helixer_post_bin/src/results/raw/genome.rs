@@ -15,6 +15,7 @@ pub struct RawHelixerGenome
 }
 
 const X_DATASIZE: usize = 4;
+const PHASE_DATASIZE: usize = 4;
 const STARTENDS_DATASIZE: usize = 2;
 const TRANSITIONS_DATASIZE: usize = 6;
 const Y_DATASIZE: usize = 4;
@@ -163,6 +164,13 @@ impl RawHelixerGenome
         let is_annotated_ds = self.get_is_annotated_raw()?;
         let is_annotated_array = is_annotated_ds.read_1d::<bool>()?;
         Ok(is_annotated_array.to_vec())
+    }
+
+    pub fn get_phases_raw(&self) -> Result<Dataset>
+    {
+        let dataset = self.genome_file.dataset("data/phases")?;
+        self.validate_dataset_shape_blocksize_array(&dataset, PHASE_DATASIZE)?;
+        Ok(dataset)
     }
 
     pub fn get_sample_weights_raw(&self) -> Result<Dataset>
