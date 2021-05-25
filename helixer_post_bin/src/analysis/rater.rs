@@ -1,20 +1,32 @@
 
-
-/*
-    Precision = TP / ( TP + FP )
-    Recall = TP / ( TP + FN )
-
-    F1 = (2 * Precision * Recall) / (Precision + Recall)
-    F1 = TP / ( TP + ( FP + FN ) / 2 )
-    F1 = (2 * TP) / (2 * TP + FP + FN)
- */
-
-
-
 use crate::analysis::ComparisonIterator;
 use crate::analysis::hmm::{HmmStateRegion, HmmAnnotationLabel};
 use crate::results::conv::{ClassReference, PhaseReference, ClassPrediction, PhasePrediction};
 
+
+/*
+Precision = TP / ( TP + FP )
+Recall = TP / ( TP + FN )
+
+F1 = (2 * Precision * Recall) / (Precision + Recall)
+F1 = TP / ( TP + ( FP + FN ) / 2 )
+F1 = (2 * TP) / (2 * TP + FP + FN)
+*/
+
+fn calc_precision_recall_f1(true_pos: u64, false_pos: u64, false_neg: u64) -> (f64, f64, f64)
+{
+    let true_pos = true_pos as f64;
+    let false_pos = false_pos as f64;
+    let false_neg = false_neg as f64;
+
+    let precision = true_pos / ( true_pos + false_pos );
+    let recall = true_pos / ( true_pos + false_neg );
+    let f1 = (2.0 * true_pos ) / ( 2.0 * true_pos + false_pos + false_neg );
+
+    (precision, recall, f1)
+}
+
+#[derive(Copy, Clone)]
 pub struct ConfusionMatrix<const N: usize>
 {
     count: [[u64; N]; N]
@@ -23,6 +35,9 @@ pub struct ConfusionMatrix<const N: usize>
 
 impl<const N: usize> ConfusionMatrix<N>
 {
+    //const SMALLER: usize = N - 1;
+    //const BIGGER: usize = N + 1;
+
     pub fn new() -> ConfusionMatrix<N>
     {
         let count = [[0; N]; N];
@@ -40,6 +55,13 @@ impl<const N: usize> ConfusionMatrix<N>
                 { self.count[r][p]+=other.count[r][p]; }
             }
     }
+
+    /*
+    fn set(&mut self, ref_idx: usize, pred_idx: usize, count: u64)
+    {
+        self.count[ref_idx][pred_idx]=count;
+    }
+*/
 
     pub fn increment(&mut self, ref_idx: usize, pred_idx: usize)
     {
@@ -76,15 +98,14 @@ impl<const N: usize> ConfusionMatrix<N>
         false_neg
     }
 
-    pub fn dump(&self)
+
+
+    pub fn get_precision_recall_f1(&self, idx: usize) -> (f64, f64, f64)
     {
-        for i in 0..N
-        {
-            for j in 0..N
-                { print!("{}\t\t", self.count[i][j]); }
-            println!();
-        }
+        calc_precision_recall_f1(self.get_tp(idx), self.get_fp(idx), self.get_fn(idx))
     }
+
+
 }
 
 
@@ -94,6 +115,7 @@ impl<const N: usize> ConfusionMatrix<N>
 enum Annotation
 {
     OutsideWindow,
+    Filtered,
     Intergenic,
     UTR,
     CodingPhase0,
@@ -109,6 +131,7 @@ impl Annotation
         match self
         {
             Annotation::OutsideWindow => "OutsideWindow",
+            Annotation::Filtered => "Filtered",
             Annotation::Intergenic => "Intergenic",
             Annotation::UTR => "UTR",
             Annotation::CodingPhase0 => "CodingPhase0",
@@ -118,20 +141,12 @@ impl Annotation
         }
     }
 
-    fn get_window_idx(self) -> usize
-    {
-        match self
-        {
-            Annotation::OutsideWindow => 0,
-            _ => 1
-        }
-    }
-
     fn get_class_idx(self) -> usize
     {
         match self
         {
             Annotation::OutsideWindow => 0,
+            Annotation::Filtered => 0,
             Annotation::Intergenic => 0,
             Annotation::UTR => 1,
             Annotation::CodingPhase0 => 2,
@@ -146,6 +161,7 @@ impl Annotation
         match self
         {
             Annotation::OutsideWindow => 0,
+            Annotation::Filtered => 0,
             Annotation::Intergenic => 0,
             Annotation::UTR => 0,
             Annotation::CodingPhase0 => 1,
@@ -158,15 +174,6 @@ impl Annotation
 
 impl ClassReference
 {
-    fn get_window_idx(&self) -> usize
-    {
-        match self.get_max_idx()
-            {
-            0 => 0,
-            _ => 1
-            }
-    }
-
     fn get_class_idx(&self) -> usize { self.get_max_idx() }
 }
 
@@ -206,43 +213,51 @@ impl<'a> SequenceRater<'a>
         SequenceRater { comp_iterator, annotation }
     }
 
-    pub fn rate_regions(&mut self, start_offset: usize, gene_regions: &[HmmStateRegion])
+    pub fn rate_regions(&mut self, start_offset: usize, gene_regions: &[HmmStateRegion], filtered: bool)
     {
-        let mut coding_annotation = Annotation::CodingPhase0;
-
-        for region in gene_regions
+        if filtered
             {
-            if region.get_annotation_label()!=HmmAnnotationLabel::Coding
+            for region in gene_regions
                 {
-                let annotation = match region.get_annotation_label()
-                    {
-                    HmmAnnotationLabel::Intergenic => Annotation::Intergenic,
-                    HmmAnnotationLabel::UTR5 => Annotation::UTR,
-                    HmmAnnotationLabel::Intron => Annotation::Intron,
-                    HmmAnnotationLabel::UTR3 => Annotation::UTR,
-                    _ => panic!("Unexpected Hmm Annotation Label {}", region.get_annotation_label().to_str())
-                   };
-
-                for pos in region.get_start_pos()+start_offset..region.get_end_pos()+start_offset
-                    { self.annotation[pos]=annotation; }
+                for pos in region.get_start_pos() + start_offset..region.get_end_pos() + start_offset
+                    { self.annotation[pos] = Annotation::Filtered; }
                 }
-            else
-                {
-                for pos in region.get_start_pos()+start_offset..region.get_end_pos()+start_offset
-                    {
-                    self.annotation[pos]=coding_annotation;
+            }
+        else
+            {
+            let mut coding_annotation = Annotation::CodingPhase0;
 
-                    coding_annotation = match coding_annotation
+            for region in gene_regions
+            {
+                if region.get_annotation_label() != HmmAnnotationLabel::Coding
+                    {
+                    let annotation = match region.get_annotation_label()
                         {
-                        Annotation::CodingPhase0 => Annotation::CodingPhase2,
-                        Annotation::CodingPhase1 => Annotation::CodingPhase0,
-                        Annotation::CodingPhase2 => Annotation::CodingPhase1,
-                        _ => panic!("Unexpected Coding Annotation Label {}", coding_annotation.to_str())
+                        HmmAnnotationLabel::Intergenic => Annotation::Intergenic,
+                        HmmAnnotationLabel::UTR5 => Annotation::UTR,
+                        HmmAnnotationLabel::Intron => Annotation::Intron,
+                        HmmAnnotationLabel::UTR3 => Annotation::UTR,
+                        _ => panic!("Unexpected Hmm Annotation Label {}", region.get_annotation_label().to_str())
+                        };
+
+                    for pos in region.get_start_pos() + start_offset..region.get_end_pos() + start_offset
+                        { self.annotation[pos] = annotation; }
+                    }
+                else {
+                    for pos in region.get_start_pos() + start_offset..region.get_end_pos() + start_offset
+                        {
+                        self.annotation[pos] = coding_annotation;
+
+                        coding_annotation = match coding_annotation
+                            {
+                            Annotation::CodingPhase0 => Annotation::CodingPhase2,
+                            Annotation::CodingPhase1 => Annotation::CodingPhase0,
+                            Annotation::CodingPhase2 => Annotation::CodingPhase1,
+                            _ => panic!("Unexpected Coding Annotation Label {}", coding_annotation.to_str())
+                            }
                         }
                     }
-
                 }
-
             }
     }
 
@@ -273,17 +288,34 @@ pub struct SequenceRating
     ml_hp_class_confusion: ConfusionMatrix<4>,
     ml_hp_phase_confusion: ConfusionMatrix<4>,
 
-    ref_window_confusion: ConfusionMatrix<2>
+    outside_window_count: u64,
+    filtered_count: u64
+
 }
 
 impl SequenceRating
 {
-    fn new() -> SequenceRating
+    pub fn new() -> SequenceRating
     {
         SequenceRating { ref_ml_class_confusion: ConfusionMatrix::<4>::new(), ref_ml_phase_confusion: ConfusionMatrix::<4>::new(),
             ref_hp_class_confusion: ConfusionMatrix::<4>::new(), ref_hp_phase_confusion: ConfusionMatrix::<4>::new(),
             ml_hp_class_confusion: ConfusionMatrix::<4>::new(), ml_hp_phase_confusion: ConfusionMatrix::<4>::new(),
-            ref_window_confusion: ConfusionMatrix::<2>::new()}
+            outside_window_count: 0, filtered_count: 0}
+    }
+
+    pub fn accumulate(&mut self, other: &Self)
+    {
+        self.ref_ml_class_confusion.accumulate(&other.ref_ml_class_confusion);
+        self.ref_ml_phase_confusion.accumulate(&other.ref_ml_phase_confusion);
+
+        self.ref_hp_class_confusion.accumulate(&other.ref_hp_class_confusion);
+        self.ref_hp_phase_confusion.accumulate(&other.ref_hp_phase_confusion);
+
+        self.ml_hp_class_confusion.accumulate(&other.ml_hp_class_confusion);
+        self.ml_hp_phase_confusion.accumulate(&other.ml_hp_phase_confusion);
+
+        self.outside_window_count += other.outside_window_count;
+        self.filtered_count += other.filtered_count;
     }
 
     fn rate(&mut self, comp_iterator: ComparisonIterator, annotation: Vec<Annotation>)
@@ -300,9 +332,6 @@ impl SequenceRating
             let hp_class_idx = annotation.get_class_idx();
             let hp_phase_idx = annotation.get_phase_idx();
 
-            let ref_window_idx = class_ref.get_window_idx();
-            let hp_window_idx = annotation.get_window_idx();
-
             self.ref_ml_class_confusion.increment(ref_class_idx, ml_class_idx);
             self.ref_ml_phase_confusion.increment(ref_phase_idx, ml_phase_idx);
 
@@ -312,31 +341,114 @@ impl SequenceRating
             self.ml_hp_class_confusion.increment(ml_class_idx, hp_class_idx);
             self.ml_hp_phase_confusion.increment(ml_phase_idx, hp_phase_idx);
 
-            self.ref_window_confusion.increment(ref_window_idx, hp_window_idx);
+            if ref_class_idx!=0
+                {
+                match annotation
+                    {
+                    Annotation::OutsideWindow => self.outside_window_count+=1,
+                    Annotation::Filtered => self.filtered_count+=1,
+                    _ => ()
+                    }
+                }
+
         }
+    }
+
+
+
+
+    const CLASS_NAMES: [&'static str; 4] = [ "Intergenic", "UTR", "Coding", "Intron" ];
+    const PHASE_NAMES: [&'static str; 4] = [ "Non Coding", "Phase 0", "Phase 1", "Phase 2" ];
+
+    pub fn show_confusion_matrices(class_confusion: &ConfusionMatrix<4>, phase_confusion: &ConfusionMatrix<4>, corner_label: &str)
+    {
+        /* Confusion Matrices, two column layout */
+        print!("{:>10} Class\t", corner_label);
+        for j in 0..4
+            { print!("{:>12}\t", Self::CLASS_NAMES[j]); }
+
+        print!("\t");
+
+        print!("{:>10} Phase\t", corner_label);
+        for j in 0..4
+            { print!("{:>12}\t", Self::PHASE_NAMES[j]); }
+
+        println!();
+
+        for i in 0..4
+            {
+            print!("{:>16}\t", Self::CLASS_NAMES[i]);
+            for j in 0..4
+                { print!("{:12}\t", class_confusion.count[i][j]); }
+
+            print!("\t");
+
+            print!("{:>16}\t", Self::PHASE_NAMES[i]);
+            for j in 0..4
+                { print!("{:12}\t", phase_confusion.count[i][j]); }
+
+            println!();
+            }
+
+        println!();
+
+        /* Summaries, two column layout */
+
+        print!("{:>16}\t{:>12}\t{:>12}\t{:>12}\t{:>12}\t", "", "Precision", "Recall", "F1","");
+        print!("\t");
+        println!("{:>16}\t{:>12}\t{:>12}\t{:>12}\t{:>12}\t", "", "Precision", "Recall", "F1","");
+
+        for i in 0..4
+            {
+            let (prec, rec, f1) = class_confusion.get_precision_recall_f1(i);
+            print!("{:>16}\t{:12.5}\t{:12.5}\t{:12.5}\t{:>12}\t", Self::CLASS_NAMES[i], prec, rec, f1, "");
+
+            print!("\t");
+
+            let (prec, rec, f1) = phase_confusion.get_precision_recall_f1(i);
+            print!("{:>16}\t{:12.5}\t{:12.5}\t{:12.5}\t{:>12}\t", Self::PHASE_NAMES[i], prec, rec, f1, "");
+
+            println!();
+            }
+
+        println!();
+
+        let subg_true_pos = class_confusion.get_tp(2)+class_confusion.get_tp(3);
+        let subg_false_pos = class_confusion.get_fp(2)+class_confusion.get_fp(3);
+        let subg_false_neg = class_confusion.get_fn(2)+class_confusion.get_fn(3);
+
+        let (subg_prec, subg_rec, subg_f1) = calc_precision_recall_f1(subg_true_pos, subg_false_pos, subg_false_neg);
+
+        let gen_true_pos = subg_true_pos + class_confusion.get_tp(1);
+        let gen_false_pos = subg_false_pos + class_confusion.get_fp(1);
+        let gen_false_neg = subg_false_neg + class_confusion.get_fn(1);
+
+        let (gen_prec, gen_rec, gen_f1) = calc_precision_recall_f1(gen_true_pos, gen_false_pos, gen_false_neg);
+
+        let coding_true_pos = phase_confusion.get_tp(1)+phase_confusion.get_tp(2)+phase_confusion.get_tp(3);
+        let coding_false_pos = phase_confusion.get_fp(1)+phase_confusion.get_fp(2)+phase_confusion.get_fp(3);
+        let coding_false_neg = phase_confusion.get_fn(1)+phase_confusion.get_fn(2)+phase_confusion.get_fn(3);
+
+        let (coding_prec, coding_rec, coding_f1) = calc_precision_recall_f1(coding_true_pos, coding_false_pos, coding_false_neg);
+
+        print!("{:>16}\t{:12.5}\t{:12.5}\t{:12.5}\t{:>12}\t", "Subgenic", subg_prec, subg_rec, subg_f1, "");
+        print!("\t");
+        println!("{:>16}\t{:12.5}\t{:12.5}\t{:12.5}\t{:>12}\t", "Coding", coding_prec, coding_rec, coding_f1, "");
+
+        println!("{:>16}\t{:12.5}\t{:12.5}\t{:12.5}\t", "Genic", gen_prec, gen_rec, gen_f1);
+
+        println!();
+        println!();
     }
 
     pub fn dump(&self)
     {
-        println!("Ref vs HP Window");
-        self.ref_window_confusion.dump();
+        println!("Lost Ref Genic: Outside Window {}, Filtered {}", self.outside_window_count, self.filtered_count);
         println!();
 
-        println!("Ref vs ML class");
-        self.ref_ml_class_confusion.dump();
-        println!("Ref vs HP class");
-        self.ref_hp_class_confusion.dump();
-        println!("ML vs HP class");
-        self.ml_hp_class_confusion.dump();
-        println!();
-
-        println!("Ref vs ML phase");
-        self.ref_ml_phase_confusion.dump();
-        println!("Ref vs HP Phase");
-        self.ref_hp_phase_confusion.dump();
-        println!("ML vs HP phase");
-        self.ml_hp_phase_confusion.dump();
-        println!();
+        Self::show_confusion_matrices(&self.ref_ml_class_confusion, &self.ref_ml_phase_confusion, "Ref v ML");
+        Self::show_confusion_matrices(&self.ref_hp_class_confusion, &self.ref_hp_phase_confusion, "Ref v HP");
+        Self::show_confusion_matrices(&self.ml_hp_class_confusion, &self.ml_hp_phase_confusion, "ML v HP");
     }
 }
 

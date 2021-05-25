@@ -8,12 +8,12 @@ use helixer_post_bin::gff::GffWriter;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use helixer_post_bin::analysis::gff_conv::hmm_solution_to_gff;
-use helixer_post_bin::analysis::rater::SequenceRater;
+use helixer_post_bin::analysis::rater::{SequenceRater, SequenceRating};
 
 
 fn process_sequence<W: Write>(bp_extractor: &BasePredictionExtractor, comp_extractor: &ComparisonExtractor,
-                              species: &Species, seq: &Sequence, window_size: usize, edge_threshold: f32, peak_threshold: f32,
-                              min_coding_length: usize, gff_writer: &mut GffWriter<W>) -> (usize, usize)
+                              species: &Species, seq: &Sequence, window_size: usize, edge_threshold: f32, peak_threshold: f32, min_coding_length: usize,
+                              fwd_rating: &mut SequenceRating, rev_rating: &mut SequenceRating, gff_writer: &mut GffWriter<W>) -> (usize, usize)
 {
     let id = seq.get_id();
     println!("  BP_Extractor for Sequence {} - ID {}", seq.get_name(), id.inner());
@@ -42,8 +42,8 @@ fn process_sequence<W: Write>(bp_extractor: &BasePredictionExtractor, comp_extra
             let solution_regions = solution.trace_regions();
             let genes = HmmStateRegion::split_genes(solution_regions);
 
-            for (gene_regions,_) in genes.iter()
-                { fwd_comp_rater.rate_regions(start_pos, &gene_regions); }
+            for (gene_regions, coding_length) in genes.iter()
+                { fwd_comp_rater.rate_regions(start_pos, &gene_regions, *coding_length < min_coding_length); }
 
             let gff_records = hmm_solution_to_gff(genes, species.get_name(), seq.get_name(), "HelixerPost",
                                               false, start_pos, seq.get_length(), min_coding_length, &mut gene_idx);
@@ -53,9 +53,11 @@ fn process_sequence<W: Write>(bp_extractor: &BasePredictionExtractor, comp_extra
             { panic!("No solution at {} {} - {}", seq.get_name(), start_pos, end_pos); }
         }
 
-    let fwd_rating = fwd_comp_rater.calculate_stats();
-    println!("Forward");
-    fwd_rating.dump();
+    let fwd_seq_rating = fwd_comp_rater.calculate_stats();
+    println!("Forward for Sequence {} - ID {}", seq.get_name(), id.inner());
+    fwd_seq_rating.dump();
+
+    fwd_rating.accumulate(&fwd_seq_rating);
 
     let rev_bp_iter =
         BasePredictionWindowThresholdIterator::new(bp_extractor.rev_iterator(id), window_size, edge_threshold, peak_threshold).unwrap();
@@ -77,8 +79,9 @@ fn process_sequence<W: Write>(bp_extractor: &BasePredictionExtractor, comp_extra
             let solution_regions = solution.trace_regions();
             let genes = HmmStateRegion::split_genes(solution_regions);
 
-            for (gene_regions,_) in genes.iter()
-                { rev_comp_rater.rate_regions(start_pos, &gene_regions); }
+            for (gene_regions,coding_length) in genes.iter()
+                { rev_comp_rater.rate_regions(start_pos, &gene_regions, *coding_length < min_coding_length); }
+
 
             let gff_records = hmm_solution_to_gff(genes, species.get_name(), seq.get_name(), "HelixerPost",
                                                   true, start_pos, seq.get_length(), min_coding_length, &mut gene_idx);
@@ -89,10 +92,11 @@ fn process_sequence<W: Write>(bp_extractor: &BasePredictionExtractor, comp_extra
 
         }
 
-    let rev_rating = rev_comp_rater.calculate_stats();
+    let rev_seq_rating = rev_comp_rater.calculate_stats();
+    println!("Reverse for Sequence {} - ID {}", seq.get_name(), id.inner());
+    rev_seq_rating.dump();
 
-    println!("Reverse");
-    rev_rating.dump();
+    rev_rating.accumulate(&rev_seq_rating);
 
     (window_count, window_length_total)
 }
@@ -131,6 +135,9 @@ fn main()
 
     for species in helixer_res.get_all_species()
     {
+        let mut fwd_species_rating = SequenceRating::new();
+        let mut rev_species_rating = SequenceRating::new();
+
         let id = species.get_id();
         println!("Sequences for Species {} - {}", species.get_name(), id.inner() );
         for seq_id in helixer_res.get_sequences_for_species(id)
@@ -139,14 +146,28 @@ fn main()
 
 //            dump_seq(&helixer_res, seq);
             let (count, length) = process_sequence(&bp_extractor, &comp_extractor, species, seq,
-                                                   window_size, edge_threshold, peak_threshold, min_coding_length, &mut gff_writer);
+                                                   window_size, edge_threshold, peak_threshold, min_coding_length,
+                                                   &mut fwd_species_rating, &mut rev_species_rating, &mut gff_writer);
 
             total_count+=count;
             total_length+=length;
         }
+
+        println!("Forward for Species {} - {}", species.get_name(), id.inner() );
+        fwd_species_rating.dump();
+
+        println!("Reverse for Species {} - {}", species.get_name(), id.inner() );
+        rev_species_rating.dump();
+
+        let mut species_rating = SequenceRating::new();
+        species_rating.accumulate(&fwd_species_rating);
+        species_rating.accumulate(&rev_species_rating);
+
+        println!("Total for Species {} - {}", species.get_name(), id.inner() );
+        species_rating.dump();
     }
 
-    println!("Total: {}bp in {} sequences", total_length, total_count);
+    println!("Total: {}bp across {} windows", total_length, total_count);
 
 
 }
