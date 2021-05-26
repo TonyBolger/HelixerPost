@@ -120,7 +120,7 @@ impl PredPenalty
     pub fn get_intron_penalty(&self) -> f64 { self.penalty[5] }
 }
 
-const PHASE_RETAIN: f64 = 0.2;      // Adjust as needed
+const PHASE_RETAIN: f64 = 0.20;      // Adjust as needed
 
 const PHASE_DILUTE: f64 = 1.0 - PHASE_RETAIN;
 const PRED_PROB_FLOOR: f64 =  0.000_000_001; // Prevent infinite penalties
