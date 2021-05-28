@@ -1,6 +1,6 @@
 use crate::results::{SequenceID, SpeciesID, HelixerResults, Result};
 use std::ops::Range;
-use crate::results::conv::{ClassPrediction, Bases, PhasePrediction, ClassReference, PhaseReference};
+use crate::results::conv::{ClassPrediction, Bases, PhasePrediction, ClassReference, PhaseReference, ArrayConvInto};
 use crate::results::iter::{BlockedDataset2D, BlockedDataset2DIter};
 
 pub mod gff_conv;
@@ -46,28 +46,44 @@ impl SequenceRegion
 
 
 // Hard coded as Bases / Predictions for now. Would make more sense to have all base-level datasets optionally available (and seekable)
-pub struct BasePredictionExtractor<'a>
+pub struct BasePredictionExtractor<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>>
 {
     helixer_res: &'a HelixerResults,
 
     bases_blocked_dataset: BlockedDataset2D<'a, f32, Bases>,
 
-    class_pred_blocked_dataset: BlockedDataset2D<'a, f32, ClassPrediction>,
-    phase_pred_blocked_dataset: BlockedDataset2D<'a, f32, PhasePrediction>,
+    class_pred_blocked_dataset: BlockedDataset2D<'a, TC, ClassPrediction>,
+    phase_pred_blocked_dataset: BlockedDataset2D<'a, TP, PhasePrediction>,
 }
 
-impl<'a> BasePredictionExtractor<'a>
+impl<'a> BasePredictionExtractor<'a, f32, f32>
 {
-    pub fn new(helixer_res: &'a HelixerResults) -> Result<BasePredictionExtractor<'a>>
+    pub fn new_from_prediction(helixer_res: &'a HelixerResults) -> Result<BasePredictionExtractor<'a, f32, f32>>
     {
         let bases_blocked_dataset = helixer_res.get_x()?;
         let class_pred_blocked_dataset = helixer_res.get_class_predictions()?;
         let phase_pred_blocked_dataset = helixer_res.get_phase_predictions()?;
 
-        Ok( BasePredictionExtractor { helixer_res, bases_blocked_dataset, class_pred_blocked_dataset, phase_pred_blocked_dataset } )
+        Ok(BasePredictionExtractor { helixer_res, bases_blocked_dataset, class_pred_blocked_dataset, phase_pred_blocked_dataset })
     }
+}
 
-    pub fn fwd_iterator(&'a self, sequence_id: SequenceID) -> BasePredictionIterator<'a>
+impl<'a> BasePredictionExtractor<'a, i8, i8>
+{
+    pub fn new_from_pseudo_predictions(helixer_res: &'a HelixerResults) -> Result<BasePredictionExtractor<'a, i8, i8>>
+    {
+        let bases_blocked_dataset = helixer_res.get_x()?;
+        let class_pred_blocked_dataset = helixer_res.get_class_reference_as_pseudo_predictions()?;
+        let phase_pred_blocked_dataset = helixer_res.get_phase_reference_as_pseudo_predictions()?;
+
+        Ok(BasePredictionExtractor { helixer_res, bases_blocked_dataset, class_pred_blocked_dataset, phase_pred_blocked_dataset })
+    }
+}
+
+
+impl<'a,  TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>> BasePredictionExtractor<'a, TC, TP>
+{
+    pub fn fwd_iterator(&'a self, sequence_id: SequenceID) -> BasePredictionIterator<'a, TC, TP>
     {
         let sequence = self.helixer_res.get_index().get_sequence_by_id(sequence_id);
 
@@ -78,7 +94,7 @@ impl<'a> BasePredictionExtractor<'a>
         BasePredictionIterator::new(self, sequence.get_species_id(), sequence_id, false, base_iter, class_pred_iter, phase_pred_iter)
     }
 
-    pub fn rev_iterator(&'a self, sequence_id: SequenceID) -> BasePredictionIterator<'a>
+    pub fn rev_iterator(&'a self, sequence_id: SequenceID) -> BasePredictionIterator<'a, TC, TP>
     {
         let sequence = self.helixer_res.get_index().get_sequence_by_id(sequence_id);
 
@@ -91,9 +107,9 @@ impl<'a> BasePredictionExtractor<'a>
 }
 
 
-pub struct BasePredictionIterator<'a>
+pub struct BasePredictionIterator<'a,  TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>>
 {
-    extractor: &'a BasePredictionExtractor<'a>,
+    extractor: &'a BasePredictionExtractor<'a, TC, TP>,
 
     species_id: SpeciesID,
     sequence_id: SequenceID,
@@ -101,19 +117,19 @@ pub struct BasePredictionIterator<'a>
 
     base_iter: BlockedDataset2DIter<'a, f32, Bases>,
 
-    class_pred_iter: BlockedDataset2DIter<'a, f32, ClassPrediction>,
-    phase_pred_iter: BlockedDataset2DIter<'a, f32, PhasePrediction>,
+    class_pred_iter: BlockedDataset2DIter<'a, TC, ClassPrediction>,
+    phase_pred_iter: BlockedDataset2DIter<'a, TP, PhasePrediction>,
 }
 
-impl<'a> BasePredictionIterator<'a>
+impl<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>> BasePredictionIterator<'a, TC, TP>
 {
-    fn new(extractor: &'a BasePredictionExtractor<'a>, species_id: SpeciesID, sequence_id: SequenceID, rc: bool, base_iter: BlockedDataset2DIter<'a, f32, Bases>,
-           class_pred_iter: BlockedDataset2DIter<'a, f32, ClassPrediction>, phase_pred_iter: BlockedDataset2DIter<'a, f32, PhasePrediction>) -> BasePredictionIterator<'a>
+    fn new(extractor: &'a BasePredictionExtractor<'a, TC, TP>, species_id: SpeciesID, sequence_id: SequenceID, rc: bool, base_iter: BlockedDataset2DIter<'a, f32, Bases>,
+           class_pred_iter: BlockedDataset2DIter<'a, TC, ClassPrediction>, phase_pred_iter: BlockedDataset2DIter<'a, TP, PhasePrediction>) -> BasePredictionIterator<'a, TC, TP>
     {
         BasePredictionIterator { extractor, species_id, sequence_id, rc, base_iter, class_pred_iter, phase_pred_iter }
     }
 
-    pub fn get_extractor(&self) -> &BasePredictionExtractor { self.extractor }
+    pub fn get_extractor(&self) -> &BasePredictionExtractor<TC, TP> { self.extractor }
 
     pub fn get_species_id(&self) -> SpeciesID { self.species_id }
 
@@ -122,7 +138,7 @@ impl<'a> BasePredictionIterator<'a>
     pub fn get_rc(&self) -> bool { self.rc }
 }
 
-impl<'a> Iterator for BasePredictionIterator<'a>
+impl<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>> Iterator for BasePredictionIterator<'a, TC, TP>
 {
     type Item = (Bases, ClassPrediction, PhasePrediction);
 

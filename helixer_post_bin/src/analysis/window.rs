@@ -1,11 +1,11 @@
 use crate::analysis::BasePredictionIterator;
-use crate::results::conv::{Bases, ClassPrediction, PhasePrediction};
+use crate::results::conv::{Bases, ClassPrediction, PhasePrediction, ArrayConvInto};
 use std::collections::VecDeque;
 use std::collections::vec_deque::Iter;
 
-pub struct BasePredictionWindow<'a>
+pub struct BasePredictionWindow<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>>
 {
-    bp_iter: BasePredictionIterator<'a>,
+    bp_iter: BasePredictionIterator<'a, TC, TP>,
 
     window_size: usize,
     scale: f32,
@@ -15,9 +15,9 @@ pub struct BasePredictionWindow<'a>
     position: usize
 }
 
-impl<'a> BasePredictionWindow<'a>
+impl<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>> BasePredictionWindow<'a, TC, TP>
 {
-    pub fn new(bp_iter: BasePredictionIterator<'a>, window_size: usize, scale: f32) -> Option<BasePredictionWindow<'a>>
+    pub fn new(bp_iter: BasePredictionIterator<'a, TC, TP>, window_size: usize, scale: f32) -> Option<BasePredictionWindow<'a, TC, TP>>
     {
         let window = VecDeque::with_capacity(window_size);
 
@@ -71,16 +71,16 @@ impl<'a> BasePredictionWindow<'a>
 
 
 
-pub struct BasePredictionWindowThresholdScanner<'a>
+pub struct BasePredictionWindowThresholdScanner<'a,  TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>>
 {
-    bp_window: BasePredictionWindow<'a>,
+    bp_window: BasePredictionWindow<'a, TC, TP>,
     edge_threshold: u64
 }
 
 
-impl<'a> BasePredictionWindowThresholdScanner<'a>
+impl<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>> BasePredictionWindowThresholdScanner<'a, TC, TP>
 {
-    pub fn new(bp_window: BasePredictionWindow<'a>, edge_threshold: f32) -> BasePredictionWindowThresholdScanner<'a>
+    pub fn new(bp_window: BasePredictionWindow<'a, TC, TP>, edge_threshold: f32) -> BasePredictionWindowThresholdScanner<'a, TC, TP>
     {
         let threshold = (edge_threshold * bp_window.scale * (bp_window.window_size as f32)) as u64;
 
@@ -135,16 +135,16 @@ impl<'a> BasePredictionWindowThresholdScanner<'a>
 
 const THRESHOLD_SCALE: f32 = 1_000_000.0;
 
-pub struct BasePredictionWindowThresholdIterator<'a>
+pub struct BasePredictionWindowThresholdIterator<'a,  TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>>
 {
-    bp_scanner: BasePredictionWindowThresholdScanner<'a>,
+    bp_scanner: BasePredictionWindowThresholdScanner<'a, TC, TP>,
     peak_threshold: u64,
     peak_scale: f32
 }
 
-impl<'a> BasePredictionWindowThresholdIterator<'a>
+impl<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>> BasePredictionWindowThresholdIterator<'a, TC, TP>
 {
-    pub fn new(bp_iter: BasePredictionIterator<'a>, window_size: usize, edge_threshold: f32, peak_threshold: f32) -> Option<BasePredictionWindowThresholdIterator<'a>>
+    pub fn new(bp_iter: BasePredictionIterator<'a, TC, TP>, window_size: usize, edge_threshold: f32, peak_threshold: f32) -> Option<BasePredictionWindowThresholdIterator<'a, TC, TP>>
     {
         let bp_window = BasePredictionWindow::new(bp_iter, window_size, THRESHOLD_SCALE);
         if bp_window.is_none()
@@ -162,7 +162,7 @@ impl<'a> BasePredictionWindowThresholdIterator<'a>
     }
 }
 
-impl<'a> Iterator for BasePredictionWindowThresholdIterator<'a>
+impl<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>> Iterator for BasePredictionWindowThresholdIterator<'a, TC, TP>
 {
     type Item = (Vec<(Bases, ClassPrediction, PhasePrediction)>, Vec<u64>, usize, f32);
 

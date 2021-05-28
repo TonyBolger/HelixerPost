@@ -74,7 +74,7 @@ impl HelixerResults
     pub fn get_block_ids_for_sequence(&self, id: SequenceID) -> &(Vec<BlockID>, Vec<BlockID>) { self.index.get_block_ids_for_sequence(id) }
 
 
-    // Wrapped dataset accessors for large datasets, delegate smaller datasets to standard collection convertors
+    // Wrapped dataset accessors for large datasets, delegate smaller datasets to standard collection converters
 
     pub fn get_class_predictions(&self) -> Result<BlockedDataset2D<f32, ClassPrediction>>
     {
@@ -129,10 +129,21 @@ impl HelixerResults
         Ok(BlockedDataset2D::new(&self.index, self.genome.get_y_raw()?))
     }
 
+    pub fn get_class_reference_as_pseudo_predictions(&self) -> Result<BlockedDataset2D<i8, ClassPrediction>>
+    {
+        Ok(BlockedDataset2D::new(&self.index, self.genome.get_y_raw()?))
+    }
+
     pub fn get_phase_reference(&self) -> Result<BlockedDataset2D<i8, PhaseReference>>
     {
         Ok(BlockedDataset2D::new(&self.index, self.genome.get_phases_raw()?))
     }
+
+    pub fn get_phase_reference_as_pseudo_predictions(&self) -> Result<BlockedDataset2D<i8, PhasePrediction>>
+    {
+        Ok(BlockedDataset2D::new(&self.index, self.genome.get_phases_raw()?))
+    }
+
 
 }
 

@@ -8,7 +8,7 @@ use super::HelixerIndex;
 use crate::results::SequenceID;
 use std::marker::PhantomData;
 use std::ops::Range;
-use crate::results::conv::ArrayConv;
+use crate::results::conv::ArrayConvInto;
 
 
 // Should be possible to merge the 1D / 2D versions at some stage with a non-trivial amount of generic magic
@@ -123,14 +123,14 @@ impl<'a, T: H5Type + Clone + Copy> Iterator for BlockedDataset1DIter<'a, T>
 
 
 
-pub struct BlockedDataset2D<'a, T: H5Type, O: ArrayConv<T>>
+pub struct BlockedDataset2D<'a, T: ArrayConvInto<O>, O>
 {
     index: &'a HelixerIndex,
     dataset: Dataset,
     phantom: PhantomData<(T,O)>
 }
 
-impl<'a, T: H5Type, O: ArrayConv<T>> BlockedDataset2D<'a, T, O>
+impl<'a, T: ArrayConvInto<O>, O> BlockedDataset2D<'a, T, O>
 {
     pub fn new(index: &'a HelixerIndex, dataset: Dataset) -> BlockedDataset2D<'a, T, O>
     {
@@ -167,7 +167,7 @@ impl<'a, T: H5Type, O: ArrayConv<T>> BlockedDataset2D<'a, T, O>
 
 
 
-pub struct BlockedDataset2DIter<'a, T: H5Type, O: ArrayConv<T>>
+pub struct BlockedDataset2DIter<'a, T: ArrayConvInto<O>, O>
 {
     blocked_dataset: &'a BlockedDataset2D<'a, T, O>,
     block_offsets: &'a [(u64, u64)],
@@ -177,7 +177,7 @@ pub struct BlockedDataset2DIter<'a, T: H5Type, O: ArrayConv<T>>
 
 }
 
-impl<'a, T: H5Type, O: ArrayConv<T>> BlockedDataset2DIter<'a, T, O>
+impl<'a, T: ArrayConvInto<O>, O> BlockedDataset2DIter<'a, T, O>
 {
     fn new(blocked_dataset: &'a BlockedDataset2D<'a, T, O>, block_offsets: &'a [(u64, u64)], blocks: &'a[BlockID]) -> BlockedDataset2DIter<'a, T, O>
     {
@@ -209,7 +209,7 @@ impl<'a, T: H5Type, O: ArrayConv<T>> BlockedDataset2DIter<'a, T, O>
     }
 }
 
-impl<'a, T: H5Type, O: ArrayConv<T>> Iterator for BlockedDataset2DIter<'a, T, O>
+impl<'a, T: ArrayConvInto<O>, O> Iterator for BlockedDataset2DIter<'a, T, O>
 {
     type Item = O;
 
@@ -224,7 +224,7 @@ impl<'a, T: H5Type, O: ArrayConv<T>> Iterator for BlockedDataset2DIter<'a, T, O>
         if let (Some(offset), Some((_, block_array, _))) = (maybe_offset, self.block.as_ref())
             {
             let slice: ArrayView1<T> = block_array.index_axis(Axis(0), offset);//.to_owned();
-            Some(O::conv(slice))
+            Some(T::into(slice))
             }
         else
             { None }

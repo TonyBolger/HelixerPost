@@ -9,9 +9,9 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use helixer_post_bin::analysis::gff_conv::hmm_solution_to_gff;
 use helixer_post_bin::analysis::rater::{SequenceRater, SequenceRating};
+use helixer_post_bin::results::conv::{ClassPrediction, PhasePrediction, ArrayConvInto};
 
-
-fn process_sequence<W: Write>(bp_extractor: &BasePredictionExtractor, comp_extractor: &ComparisonExtractor,
+fn process_sequence<TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>, W: Write>(bp_extractor: &BasePredictionExtractor<TC, TP>, comp_extractor: &ComparisonExtractor,
                               species: &Species, seq: &Sequence, window_size: usize, edge_threshold: f32, peak_threshold: f32, min_coding_length: usize,
                               fwd_rating: &mut SequenceRating, rev_rating: &mut SequenceRating, gff_writer: &mut GffWriter<W>) -> (usize, usize)
 {
@@ -122,7 +122,9 @@ fn main()
 
     let helixer_res = HelixerResults::new(predictions_path.as_ref(), genome_path.as_ref()).expect("Failed to open input files");
 
-    let bp_extractor = BasePredictionExtractor::new(&helixer_res).expect("Failed to open Base / ClassPrediction / PhasePrediction Datasets");
+    let bp_extractor = BasePredictionExtractor::new_from_prediction(&helixer_res).expect("Failed to open Base / ClassPrediction / PhasePrediction Datasets");
+    //let bp_extractor = BasePredictionExtractor::new_from_pseudo_predictions(&helixer_res).expect("Failed to open Base / ClassPrediction / PhasePrediction Datasets");
+
     let comp_extractor = ComparisonExtractor::new(&helixer_res).expect("Failed to open ClassReference / PhaseReference / ClassPrediction / PhasePrediction Datasets");
 
     let mut total_count = 0;

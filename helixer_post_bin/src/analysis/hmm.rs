@@ -822,27 +822,39 @@ impl HmmState
             HmmPrimaryState::UTR5 |
             HmmPrimaryState::UTR3 => class_pred.get_utr_penalty(),
 
-            HmmPrimaryState::Start0 |
-            HmmPrimaryState::Coding0 |
-            HmmPrimaryState::Stop0T =>
-                //class_pred.get_coding_penalty()
-                //class_pred.get_coding_penalty() + phase_pred.get_phase0_penalty()
+            HmmPrimaryState::Coding0 =>
+                //class_pred.get_coding_penalty(),
+                //class_pred.get_coding_penalty() + phase_pred.get_phase0_penalty(),
                 pred.get_coding_phase0_penalty(),
 
-            HmmPrimaryState::Start1 |
-            HmmPrimaryState::Coding1 |
-            HmmPrimaryState::Stop1TA |
-            HmmPrimaryState::Stop1TG =>
-                //class_pred.get_coding_penalty()
-                //class_pred.get_coding_penalty() + phase_pred.get_phase2_penalty()
+            HmmPrimaryState::Start0 |
+            HmmPrimaryState::Stop0T =>
+                //class_pred.get_coding_penalty(),
+                //class_pred.get_coding_penalty() + phase_pred.get_phase0_penalty(),
+                pred.get_coding_phase0_penalty(),
+
+            HmmPrimaryState::Coding1 =>
+                //class_pred.get_coding_penalty(),
+                //class_pred.get_coding_penalty() + phase_pred.get_phase2_penalty(),
                 pred.get_coding_phase2_penalty(),
 
+            HmmPrimaryState::Start1 |
+            HmmPrimaryState::Stop1TA |
+            HmmPrimaryState::Stop1TG =>
+                //class_pred.get_coding_penalty(),
+                //class_pred.get_coding_penalty() + phase_pred.get_phase2_penalty(),
+                pred.get_coding_phase2_penalty(),
+
+            HmmPrimaryState::Coding2 =>
+                //class_pred.get_coding_penalty(),
+                //class_pred.get_coding_penalty() + phase_pred.get_phase1_penalty(),
+                pred.get_coding_phase1_penalty(),
+
             HmmPrimaryState::Start2 |
-            HmmPrimaryState::Coding2 |
             HmmPrimaryState::Stop2 =>
-                //class_pred.get_coding_penalty()
-                //class_pred.get_coding_penalty() + phase_pred.get_phase1_penalty()
-                pred.get_coding_phase1_penalty()
+                //class_pred.get_coding_penalty(),
+                //class_pred.get_coding_penalty() + phase_pred.get_phase1_penalty(),
+                pred.get_coding_phase1_penalty(),
         }
     }
 
@@ -854,7 +866,7 @@ impl HmmState
         {
             HmmIntronState::U2GtAgDSS => 49,
             HmmIntronState::U2GcAgDSS => 49,
-            HmmIntronState::U12AtAcDSS => 39,
+            HmmIntronState::U12AtAcDSS => 29,
             _ => 1
         }
     }
