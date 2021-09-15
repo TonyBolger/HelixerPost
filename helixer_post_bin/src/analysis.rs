@@ -1,284 +1,102 @@
-use crate::results::{SequenceID, SpeciesID, HelixerResults, Result};
-use std::ops::Range;
-use crate::results::conv::{ClassPrediction, Bases, PhasePrediction, ClassReference, PhaseReference, ArrayConvInto};
-use crate::results::iter::{BlockedDataset2D, BlockedDataset2DIter};
+use crate::results::{Species, Sequence};
+use crate::results::conv::{ClassPrediction, PhasePrediction, ArrayConvInto};
+use std::io::Write;
+use crate::analysis::rater::{SequenceRating, SequenceRater};
+use crate::gff::GffWriter;
+use crate::analysis::window::BasePredictionWindowThresholdIterator;
+use crate::analysis::hmm::{PredictionHmm, HmmStateRegion};
+use crate::analysis::gff_conv::hmm_solution_to_gff;
+use crate::analysis::extractor::{BasePredictionExtractor, ComparisonExtractor};
 
+pub mod extractor;
 pub mod gff_conv;
 pub mod hmm;
 pub mod rater;
 pub mod window;
 
-pub struct SequenceRegion
+
+pub struct Analyzer<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>>
 {
-    species_id: SpeciesID,
-    sequence_id: SequenceID,
-
-    rc: bool,
-    position: Range<usize>,
-
+    bp_extractor: BasePredictionExtractor<'a, TC, TP>,
+    comp_extractor: ComparisonExtractor<'a>,
+    window_size: usize,
+    edge_threshold: f32,
+    peak_threshold: f32,
+    min_coding_length: usize,
 }
 
-impl SequenceRegion
+impl<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>> Analyzer<'a, TC, TP>
 {
-    pub fn new(species_id: SpeciesID, sequence_id: SequenceID, rc: bool, position: Range<usize>) -> SequenceRegion
+    pub fn new(bp_extractor: BasePredictionExtractor<'a, TC, TP>, comp_extractor: ComparisonExtractor<'a>,
+               window_size: usize, edge_threshold: f32, peak_threshold: f32, min_coding_length: usize) -> Analyzer<'a, TC, TP>
     {
-        SequenceRegion { species_id, sequence_id, position, rc }
+        Analyzer { bp_extractor, comp_extractor, window_size, edge_threshold, peak_threshold, min_coding_length }
     }
 
-    pub fn get_species(&self) -> SpeciesID { self.species_id }
-
-    pub fn get_sequence(&self) -> SequenceID { self.sequence_id }
-
-    pub fn get_rc(&self) -> bool { self.rc }
-
-    pub fn get_range(&self) -> &Range<usize> { &self.position }
-}
-
-/*
-
-    Functionality Split:
-
-    1) Dataset iterator / accessor (here)
-    2) Prediction Window (window module)
-    3) Window iteration (window module)
-
- */
-
-
-// Hard coded as Bases / Predictions for now. Would make more sense to have all base-level datasets optionally available (and seekable)
-pub struct BasePredictionExtractor<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>>
-{
-    helixer_res: &'a HelixerResults,
-
-    bases_blocked_dataset: BlockedDataset2D<'a, f32, Bases>,
-
-    class_pred_blocked_dataset: BlockedDataset2D<'a, TC, ClassPrediction>,
-    phase_pred_blocked_dataset: BlockedDataset2D<'a, TP, PhasePrediction>,
-}
-
-impl<'a> BasePredictionExtractor<'a, f32, f32>
-{
-    pub fn new_from_prediction(helixer_res: &'a HelixerResults) -> Result<BasePredictionExtractor<'a, f32, f32>>
+    fn process_sequence_1d<W:Write>(&self, species: &Species, seq: &Sequence, rev: bool, bp_iter: BasePredictionWindowThresholdIterator<TC, TP>,
+                                    gene_idx: &mut usize, rater: &mut SequenceRater, gff_writer: &mut GffWriter<W>) -> (usize, usize)
     {
-        let bases_blocked_dataset = helixer_res.get_x()?;
-        let class_pred_blocked_dataset = helixer_res.get_class_predictions()?;
-        let phase_pred_blocked_dataset = helixer_res.get_phase_predictions()?;
+        let mut window_count = 0;
+        let mut window_length_total = 0;
 
-        Ok(BasePredictionExtractor { helixer_res, bases_blocked_dataset, class_pred_blocked_dataset, phase_pred_blocked_dataset })
-    }
-}
-
-impl<'a> BasePredictionExtractor<'a, i8, i8>
-{
-    pub fn new_from_pseudo_predictions(helixer_res: &'a HelixerResults) -> Result<BasePredictionExtractor<'a, i8, i8>>
-    {
-        let bases_blocked_dataset = helixer_res.get_x()?;
-        let class_pred_blocked_dataset = helixer_res.get_class_reference_as_pseudo_predictions()?;
-        let phase_pred_blocked_dataset = helixer_res.get_phase_reference_as_pseudo_predictions()?;
-
-        Ok(BasePredictionExtractor { helixer_res, bases_blocked_dataset, class_pred_blocked_dataset, phase_pred_blocked_dataset })
-    }
-}
-
-
-impl<'a,  TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>> BasePredictionExtractor<'a, TC, TP>
-{
-    pub fn fwd_iterator(&'a self, sequence_id: SequenceID) -> BasePredictionIterator<'a, TC, TP>
-    {
-        let sequence = self.helixer_res.get_index().get_sequence_by_id(sequence_id);
-
-        let base_iter = self.bases_blocked_dataset.fwd_iter(sequence_id);
-        let class_pred_iter = self.class_pred_blocked_dataset.fwd_iter(sequence_id);
-        let phase_pred_iter = self.phase_pred_blocked_dataset.fwd_iter(sequence_id);
-
-        BasePredictionIterator::new(self, sequence.get_species_id(), sequence_id, false, base_iter, class_pred_iter, phase_pred_iter)
-    }
-
-    pub fn rev_iterator(&'a self, sequence_id: SequenceID) -> BasePredictionIterator<'a, TC, TP>
-    {
-        let sequence = self.helixer_res.get_index().get_sequence_by_id(sequence_id);
-
-        let base_iter = self.bases_blocked_dataset.rev_iter(sequence_id);
-        let class_pred_iter = self.class_pred_blocked_dataset.rev_iter(sequence_id);
-        let phase_pred_iter = self.phase_pred_blocked_dataset.rev_iter(sequence_id);
-
-        BasePredictionIterator::new(self, sequence.get_species_id(), sequence_id, true, base_iter, class_pred_iter, phase_pred_iter)
-    }
-}
-
-
-pub struct BasePredictionIterator<'a,  TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>>
-{
-    extractor: &'a BasePredictionExtractor<'a, TC, TP>,
-
-    species_id: SpeciesID,
-    sequence_id: SequenceID,
-    rc: bool,
-
-    base_iter: BlockedDataset2DIter<'a, f32, Bases>,
-
-    class_pred_iter: BlockedDataset2DIter<'a, TC, ClassPrediction>,
-    phase_pred_iter: BlockedDataset2DIter<'a, TP, PhasePrediction>,
-}
-
-impl<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>> BasePredictionIterator<'a, TC, TP>
-{
-    fn new(extractor: &'a BasePredictionExtractor<'a, TC, TP>, species_id: SpeciesID, sequence_id: SequenceID, rc: bool, base_iter: BlockedDataset2DIter<'a, f32, Bases>,
-           class_pred_iter: BlockedDataset2DIter<'a, TC, ClassPrediction>, phase_pred_iter: BlockedDataset2DIter<'a, TP, PhasePrediction>) -> BasePredictionIterator<'a, TC, TP>
-    {
-        BasePredictionIterator { extractor, species_id, sequence_id, rc, base_iter, class_pred_iter, phase_pred_iter }
-    }
-
-    pub fn get_extractor(&self) -> &BasePredictionExtractor<TC, TP> { self.extractor }
-
-    pub fn get_species_id(&self) -> SpeciesID { self.species_id }
-
-    pub fn get_sequence_id(&self) -> SequenceID { self.sequence_id }
-
-    pub fn get_rc(&self) -> bool { self.rc }
-}
-
-impl<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>> Iterator for BasePredictionIterator<'a, TC, TP>
-{
-    type Item = (Bases, ClassPrediction, PhasePrediction);
-
-    fn next(&mut self) -> Option<Self::Item>
+        for (bp_vec, _total_vec, start_pos, _peak) in bp_iter
         {
-            let bases = self.base_iter.next();
-            let class_pred = self.class_pred_iter.next();
-            let phase_pred = self.phase_pred_iter.next();
+            window_count += 1;
+            window_length_total += bp_vec.len();
 
-            if bases.is_none() && class_pred.is_none() && phase_pred.is_none()
-                { return None }
+            let end_pos = start_pos + bp_vec.len();
 
-            if bases.is_none() || class_pred.is_none() || phase_pred.is_none()
-                { panic!("Different lengths in base/class_pred/phase_pred iterators") }
+            let hmm = PredictionHmm::new(bp_vec);
+            let maybe_solution = hmm.solve();
 
-            let bases = bases.expect("Unexpected end of base iter");
-            let class_pred = class_pred.expect("Unexpected end of class_pred iter");
-            let phase_pred = phase_pred.expect("Unexpected end of phase_pred iter");
+            if let Some(solution) = maybe_solution
+            {
+                //solution.dump(start_pos);
+                let solution_regions = solution.trace_regions();
+                let genes = HmmStateRegion::split_genes(solution_regions);
 
-            return Some((bases, class_pred, phase_pred))
+                for (gene_regions, coding_length) in genes.iter()
+                { rater.rate_regions(start_pos, &gene_regions, *coding_length < self.min_coding_length); }
+
+                let gff_records = hmm_solution_to_gff(genes, species.get_name(), seq.get_name(), "HelixerPost",
+                                                      rev, start_pos, seq.get_length(), self.min_coding_length, gene_idx);
+                gff_writer.write_records(&gff_records).expect("Failed to write to GFF");
+            } else { panic!("No solution at {} {} - {}", seq.get_name(), start_pos, end_pos); }
         }
-}
 
-
-
-
-
-// Hard coded as Class/Phase reference/reference for now. Would make more sense to have all base-level datasets optionally available (and seekable)
-pub struct ComparisonExtractor<'a>
-{
-    helixer_res: &'a HelixerResults,
-
-    class_ref_blocked_dataset: BlockedDataset2D<'a, i8, ClassReference>,
-    phase_ref_blocked_dataset: BlockedDataset2D<'a, i8, PhaseReference>,
-
-    class_pred_blocked_dataset: BlockedDataset2D<'a, f32, ClassPrediction>,
-    phase_pred_blocked_dataset: BlockedDataset2D<'a, f32, PhasePrediction>,
-}
-
-impl<'a> ComparisonExtractor<'a>
-{
-    pub fn new(helixer_res: &'a HelixerResults) -> Result<ComparisonExtractor<'a>>
-    {
-        let class_ref_blocked_dataset = helixer_res.get_class_reference()?;
-        let phase_ref_blocked_dataset = helixer_res.get_phase_reference()?;
-
-        let class_pred_blocked_dataset = helixer_res.get_class_predictions()?;
-        let phase_pred_blocked_dataset = helixer_res.get_phase_predictions()?;
-
-        Ok(ComparisonExtractor { helixer_res, class_ref_blocked_dataset, phase_ref_blocked_dataset, class_pred_blocked_dataset, phase_pred_blocked_dataset })
+        (window_count, window_length_total)
     }
 
-    pub fn fwd_iterator(&'a self, sequence_id: SequenceID) -> ComparisonIterator<'a>
+    pub fn process_sequence<W: Write>(&self, species: &Species, seq: &Sequence,
+                                      fwd_rating: &mut SequenceRating, rev_rating: &mut SequenceRating, gff_writer: &mut GffWriter<W>) -> (usize, usize)
     {
-        let sequence = self.helixer_res.get_index().get_sequence_by_id(sequence_id);
+        let id = seq.get_id();
+        println!("  BP_Extractor for Sequence {} - ID {}", seq.get_name(), id.inner());
 
-        let class_ref_iter = self.class_ref_blocked_dataset.fwd_iter(sequence_id);
-        let phase_ref_iter = self.phase_ref_blocked_dataset.fwd_iter(sequence_id);
+        let mut gene_idx = 1;
 
-        let class_pred_iter = self.class_pred_blocked_dataset.fwd_iter(sequence_id);
-        let phase_pred_iter = self.phase_pred_blocked_dataset.fwd_iter(sequence_id);
+        let fwd_bp_iter =
+            BasePredictionWindowThresholdIterator::new(self.bp_extractor.fwd_iterator(id), self.window_size, self.edge_threshold, self.peak_threshold).unwrap();
+        let mut fwd_comp_rater = SequenceRater::new(self.comp_extractor.fwd_iterator(id), seq.get_length() as usize);
 
-        ComparisonIterator::new(self, sequence.get_species_id(), sequence_id, false,
-                                class_ref_iter, phase_ref_iter, class_pred_iter, phase_pred_iter)
-    }
+        let (fwd_window_count, fwd_window_length_total) = self.process_sequence_1d(species, seq, false, fwd_bp_iter, &mut gene_idx, &mut fwd_comp_rater, gff_writer);
+        let fwd_seq_rating = fwd_comp_rater.calculate_stats();
+        println!("Forward for Sequence {} - ID {}", seq.get_name(), id.inner());
+        fwd_seq_rating.dump();
 
-    pub fn rev_iterator(&'a self, sequence_id: SequenceID) -> ComparisonIterator<'a>
-    {
-        let sequence = self.helixer_res.get_index().get_sequence_by_id(sequence_id);
+        fwd_rating.accumulate(&fwd_seq_rating);
 
-        let class_ref_iter = self.class_ref_blocked_dataset.rev_iter(sequence_id);
-        let phase_ref_iter = self.phase_ref_blocked_dataset.rev_iter(sequence_id);
+        let rev_bp_iter =
+            BasePredictionWindowThresholdIterator::new(self.bp_extractor.rev_iterator(id), self.window_size, self.edge_threshold, self.peak_threshold).unwrap();
+        let mut rev_comp_rater = SequenceRater::new(self.comp_extractor.rev_iterator(id), seq.get_length() as usize);
 
-        let class_pred_iter = self.class_pred_blocked_dataset.rev_iter(sequence_id);
-        let phase_pred_iter = self.phase_pred_blocked_dataset.rev_iter(sequence_id);
+        let (rev_window_count, rev_window_length_total) = self.process_sequence_1d(species, seq, true, rev_bp_iter, &mut gene_idx, &mut rev_comp_rater, gff_writer);
+        let rev_seq_rating = rev_comp_rater.calculate_stats();
+        println!("Reverse for Sequence {} - ID {}", seq.get_name(), id.inner());
+        rev_seq_rating.dump();
 
-        ComparisonIterator::new(self, sequence.get_species_id(), sequence_id, true,
-                                class_ref_iter, phase_ref_iter, class_pred_iter, phase_pred_iter)
-    }
-}
+        rev_rating.accumulate(&rev_seq_rating);
 
-
-
-pub struct ComparisonIterator<'a>
-{
-    extractor: &'a ComparisonExtractor<'a>,
-
-    species_id: SpeciesID,
-    sequence_id: SequenceID,
-    rc: bool,
-
-    class_ref_iter: BlockedDataset2DIter<'a, i8, ClassReference>,
-    phase_ref_iter: BlockedDataset2DIter<'a, i8, PhaseReference>,
-
-    class_pred_iter: BlockedDataset2DIter<'a, f32, ClassPrediction>,
-    phase_pred_iter: BlockedDataset2DIter<'a, f32, PhasePrediction>,
-}
-
-impl<'a> ComparisonIterator<'a>
-{
-    fn new(extractor: &'a ComparisonExtractor<'a>, species_id: SpeciesID, sequence_id: SequenceID, rc: bool,
-           class_ref_iter: BlockedDataset2DIter<'a, i8, ClassReference>, phase_ref_iter: BlockedDataset2DIter<'a, i8, PhaseReference>,
-           class_pred_iter: BlockedDataset2DIter<'a, f32, ClassPrediction>, phase_pred_iter: BlockedDataset2DIter<'a, f32, PhasePrediction>)
-        -> ComparisonIterator<'a>
-    {
-        ComparisonIterator { extractor, species_id, sequence_id, rc, class_ref_iter, phase_ref_iter, class_pred_iter, phase_pred_iter }
-    }
-
-    pub fn get_extractor(&self) -> &ComparisonExtractor { self.extractor }
-
-    pub fn get_species_id(&self) -> SpeciesID { self.species_id }
-
-    pub fn get_sequence_id(&self) -> SequenceID { self.sequence_id }
-
-    pub fn get_rc(&self) -> bool { self.rc }
-}
-
-
-impl<'a> Iterator for ComparisonIterator<'a>
-{
-    type Item = (ClassReference, PhaseReference, ClassPrediction, PhasePrediction);
-
-    fn next(&mut self) -> Option<Self::Item>
-    {
-        let class_ref = self.class_ref_iter.next();
-        let phase_ref = self.phase_ref_iter.next();
-        let class_pred = self.class_pred_iter.next();
-        let phase_pred = self.phase_pred_iter.next();
-
-        if class_ref.is_none() && phase_ref.is_none() && class_pred.is_none() && phase_pred.is_none()
-            { return None }
-
-        if class_ref.is_none() || phase_ref.is_none() || class_pred.is_none() || phase_pred.is_none()
-            { panic!("Different lengths in base/class_pred/phase_pred iterators") }
-
-        let class_ref = class_ref.expect("Unexpected end of class_ref iter");
-        let phase_ref = phase_ref.expect("Unexpected end of phase_ref iter");
-        let class_pred = class_pred.expect("Unexpected end of class_pred iter");
-        let phase_pred = phase_pred.expect("Unexpected end of phase_pred iter");
-
-        return Some((class_ref, phase_ref, class_pred, phase_pred))
-    }
+        (fwd_window_count+rev_window_count, fwd_window_length_total+rev_window_length_total)
+      }
 }

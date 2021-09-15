@@ -1,7 +1,7 @@
 
-use crate::analysis::ComparisonIterator;
 use crate::analysis::hmm::{HmmStateRegion, HmmAnnotationLabel};
 use crate::results::conv::{ClassReference, PhaseReference, ClassPrediction, PhasePrediction};
+use crate::analysis::extractor::ComparisonIterator;
 
 
 /*

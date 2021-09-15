@@ -166,6 +166,7 @@ impl RawHelixerGenome
         Ok(is_annotated_array.to_vec())
     }
 
+    // For pre-annotated
     pub fn get_phases_raw(&self) -> Result<Dataset>
     {
         let dataset = self.genome_file.dataset("data/phases")?;

@@ -660,7 +660,7 @@ const ACCEPTOR_WEIGHT: f64 = 1.0;
 
 const STOP_WEIGHT: f64 = 1_000.0;
 
-pub fn show_config()
+pub fn show_hmm_config()
 {
     println!("HMM Config");
     println!("  Splicing Flags: U:{} US:{} S:{} SC:{} C:{} CS:{} S:{} SU:{} U:{}",

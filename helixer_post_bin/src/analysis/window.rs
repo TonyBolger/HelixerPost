@@ -1,4 +1,4 @@
-use crate::analysis::BasePredictionIterator;
+use crate::analysis::extractor::BasePredictionIterator;
 use crate::results::conv::{Bases, ClassPrediction, PhasePrediction, ArrayConvInto};
 use std::collections::VecDeque;
 use std::collections::vec_deque::Iter;
