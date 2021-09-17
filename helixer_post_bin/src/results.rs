@@ -124,24 +124,40 @@ impl HelixerResults
         Ok(BlockedDataset2D::new(&self.index, self.genome.get_transitions_raw()?))
     }
 
-    pub fn get_class_reference(&self) -> Result<BlockedDataset2D<i8, ClassReference>>
+    pub fn get_class_reference(&self) -> Result<Option<BlockedDataset2D<i8, ClassReference>>>
     {
-        Ok(BlockedDataset2D::new(&self.index, self.genome.get_y_raw()?))
+        match self.genome.get_y_raw()?
+        {
+            Some(dataset) => Ok(Some(BlockedDataset2D::new(&self.index, dataset))),
+            None => Ok(None)
+        }
     }
 
-    pub fn get_class_reference_as_pseudo_predictions(&self) -> Result<BlockedDataset2D<i8, ClassPrediction>>
+    pub fn get_class_reference_as_pseudo_predictions(&self) -> Result<Option<BlockedDataset2D<i8, ClassPrediction>>>
     {
-        Ok(BlockedDataset2D::new(&self.index, self.genome.get_y_raw()?))
+        match self.genome.get_y_raw()?
+        {
+            Some(dataset) => Ok(Some(BlockedDataset2D::new(&self.index, dataset))),
+            None => Ok(None)
+        }
     }
 
-    pub fn get_phase_reference(&self) -> Result<BlockedDataset2D<i8, PhaseReference>>
+    pub fn get_phase_reference(&self) -> Result<Option<BlockedDataset2D<i8, PhaseReference>>>
     {
-        Ok(BlockedDataset2D::new(&self.index, self.genome.get_phases_raw()?))
+        match self.genome.get_phases_raw()?
+        {
+            Some(dataset) => Ok(Some(BlockedDataset2D::new(&self.index, dataset))),
+            None => Ok(None)
+        }
     }
 
-    pub fn get_phase_reference_as_pseudo_predictions(&self) -> Result<BlockedDataset2D<i8, PhasePrediction>>
+    pub fn get_phase_reference_as_pseudo_predictions(&self) -> Result<Option<BlockedDataset2D<i8, PhasePrediction>>>
     {
-        Ok(BlockedDataset2D::new(&self.index, self.genome.get_phases_raw()?))
+        match self.genome.get_phases_raw()?
+        {
+            Some(dataset) => Ok(Some(BlockedDataset2D::new(&self.index, dataset))),
+            None => Ok(None)
+        }
     }
 
 

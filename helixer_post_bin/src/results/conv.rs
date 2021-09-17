@@ -191,6 +191,15 @@ impl PhaseReference
     }
 }
 
+impl Default for PhaseReference
+{
+    fn default() -> Self
+    {
+        let values: [i8;4] = [ i8::MAX, 0, 0, 0 ];
+        PhaseReference { values }
+    }
+}
+
 impl ArrayConvFrom<i8> for PhaseReference
 {
     fn from(array: ArrayView1<'_, i8>) -> Self {
@@ -224,6 +233,15 @@ impl ClassReference
             }
 
         max_idx
+    }
+}
+
+impl Default for ClassReference
+{
+    fn default() -> Self
+    {
+        let values: [i8;4] = [ i8::MAX, 0, 0, 0 ];
+        ClassReference { values }
     }
 }
 

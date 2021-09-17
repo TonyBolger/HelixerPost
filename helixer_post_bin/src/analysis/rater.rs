@@ -5,12 +5,14 @@ use crate::analysis::extractor::ComparisonIterator;
 
 
 /*
-Precision = TP / ( TP + FP )
-Recall = TP / ( TP + FN )
+    Rows are based on 'reference', Columns are based on 'prediction'
 
-F1 = (2 * Precision * Recall) / (Precision + Recall)
-F1 = TP / ( TP + ( FP + FN ) / 2 )
-F1 = (2 * TP) / (2 * TP + FP + FN)
+    Precision = TP / ( TP + FP )
+    Recall = TP / ( TP + FN )
+
+    F1 = (2 * Precision * Recall) / (Precision + Recall)
+    F1 = TP / ( TP + ( FP + FN ) / 2 )
+    F1 = (2 * TP) / (2 * TP + FP + FN)
 */
 
 fn calc_precision_recall_f1(true_pos: u64, false_pos: u64, false_neg: u64) -> (f64, f64, f64)
@@ -441,13 +443,16 @@ impl SequenceRating
         println!();
     }
 
-    pub fn dump(&self)
+    pub fn dump(&self, has_ref: bool)
     {
-        println!("Lost Ref Genic: Outside Window {}, Filtered {}", self.outside_window_count, self.filtered_count);
-        println!();
+        if has_ref
+            {
+            println!("Lost Ref Genic: Outside Window {}, Filtered {}", self.outside_window_count, self.filtered_count);
+            println!();
 
-        Self::show_confusion_matrices(&self.ref_ml_class_confusion, &self.ref_ml_phase_confusion, "Ref v ML");
-        Self::show_confusion_matrices(&self.ref_hp_class_confusion, &self.ref_hp_phase_confusion, "Ref v HP");
+            Self::show_confusion_matrices(&self.ref_ml_class_confusion, &self.ref_ml_phase_confusion, "Ref v ML");
+            Self::show_confusion_matrices(&self.ref_hp_class_confusion, &self.ref_hp_phase_confusion, "Ref v HP");
+            }
         Self::show_confusion_matrices(&self.ml_hp_class_confusion, &self.ml_hp_phase_confusion, "ML v HP");
     }
 }

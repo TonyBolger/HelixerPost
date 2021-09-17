@@ -28,13 +28,18 @@ impl<'a> BasePredictionExtractor<'a, f32, f32>
 
 impl<'a> BasePredictionExtractor<'a, i8, i8>
 {
-    pub fn new_from_pseudo_predictions(helixer_res: &'a HelixerResults) -> Result<BasePredictionExtractor<'a, i8, i8>>
+    pub fn new_from_pseudo_predictions(helixer_res: &'a HelixerResults) -> Result<Option<BasePredictionExtractor<'a, i8, i8>>>
     {
         let bases_blocked_dataset = helixer_res.get_x()?;
-        let class_pred_blocked_dataset = helixer_res.get_class_reference_as_pseudo_predictions()?;
-        let phase_pred_blocked_dataset = helixer_res.get_phase_reference_as_pseudo_predictions()?;
 
-        Ok(BasePredictionExtractor { helixer_res, bases_blocked_dataset, class_pred_blocked_dataset, phase_pred_blocked_dataset })
+        match (helixer_res.get_class_reference_as_pseudo_predictions()?, helixer_res.get_phase_reference_as_pseudo_predictions()?)
+            {
+            (Some(class_pred_blocked_dataset), Some(phase_pred_blocked_dataset)) =>
+                    Ok(Some(BasePredictionExtractor { helixer_res, bases_blocked_dataset, class_pred_blocked_dataset, phase_pred_blocked_dataset })),
+            (Some(_), None) => { eprintln!("Warning: Ref Class predictions without Ref Phase predictions"); Ok(None) },
+            (None, Some(_)) => { eprintln!("Warning: Ref Phase predictions without Ref Class predictions"); Ok(None) },
+            (None, None) => Ok(None),
+            }
     }
 }
 
@@ -129,8 +134,8 @@ pub struct ComparisonExtractor<'a>
 {
     helixer_res: &'a HelixerResults,
 
-    class_ref_blocked_dataset: BlockedDataset2D<'a, i8, ClassReference>,
-    phase_ref_blocked_dataset: BlockedDataset2D<'a, i8, PhaseReference>,
+    class_ref_blocked_dataset: Option<BlockedDataset2D<'a, i8, ClassReference>>,
+    phase_ref_blocked_dataset: Option<BlockedDataset2D<'a, i8, PhaseReference>>,
 
     class_pred_blocked_dataset: BlockedDataset2D<'a, f32, ClassPrediction>,
     phase_pred_blocked_dataset: BlockedDataset2D<'a, f32, PhasePrediction>,
@@ -153,8 +158,8 @@ impl<'a> ComparisonExtractor<'a>
     {
         let sequence = self.helixer_res.get_index().get_sequence_by_id(sequence_id);
 
-        let class_ref_iter = self.class_ref_blocked_dataset.fwd_iter(sequence_id);
-        let phase_ref_iter = self.phase_ref_blocked_dataset.fwd_iter(sequence_id);
+        let class_ref_iter = self.class_ref_blocked_dataset.as_ref().map(|d| d.fwd_iter(sequence_id));
+        let phase_ref_iter = self.phase_ref_blocked_dataset.as_ref().map(|d| d.fwd_iter(sequence_id));
 
         let class_pred_iter = self.class_pred_blocked_dataset.fwd_iter(sequence_id);
         let phase_pred_iter = self.phase_pred_blocked_dataset.fwd_iter(sequence_id);
@@ -167,14 +172,19 @@ impl<'a> ComparisonExtractor<'a>
     {
         let sequence = self.helixer_res.get_index().get_sequence_by_id(sequence_id);
 
-        let class_ref_iter = self.class_ref_blocked_dataset.rev_iter(sequence_id);
-        let phase_ref_iter = self.phase_ref_blocked_dataset.rev_iter(sequence_id);
+        let class_ref_iter = self.class_ref_blocked_dataset.as_ref().map(|d| d.rev_iter(sequence_id));
+        let phase_ref_iter = self.phase_ref_blocked_dataset.as_ref().map(|d| d.rev_iter(sequence_id));
 
         let class_pred_iter = self.class_pred_blocked_dataset.rev_iter(sequence_id);
         let phase_pred_iter = self.phase_pred_blocked_dataset.rev_iter(sequence_id);
 
         ComparisonIterator::new(self, sequence.get_species_id(), sequence_id, true,
                                 class_ref_iter, phase_ref_iter, class_pred_iter, phase_pred_iter)
+    }
+
+    pub fn has_ref(&self) -> bool
+    {
+        self.class_ref_blocked_dataset.is_some() && self.phase_ref_blocked_dataset.is_some()
     }
 }
 
@@ -188,8 +198,10 @@ pub struct ComparisonIterator<'a>
     sequence_id: SequenceID,
     rc: bool,
 
-    class_ref_iter: BlockedDataset2DIter<'a, i8, ClassReference>,
-    phase_ref_iter: BlockedDataset2DIter<'a, i8, PhaseReference>,
+    has_ref: bool,
+
+    class_ref_iter: Option<BlockedDataset2DIter<'a, i8, ClassReference>>,
+    phase_ref_iter: Option<BlockedDataset2DIter<'a, i8, PhaseReference>>,
 
     class_pred_iter: BlockedDataset2DIter<'a, f32, ClassPrediction>,
     phase_pred_iter: BlockedDataset2DIter<'a, f32, PhasePrediction>,
@@ -198,11 +210,12 @@ pub struct ComparisonIterator<'a>
 impl<'a> ComparisonIterator<'a>
 {
     fn new(extractor: &'a ComparisonExtractor<'a>, species_id: SpeciesID, sequence_id: SequenceID, rc: bool,
-           class_ref_iter: BlockedDataset2DIter<'a, i8, ClassReference>, phase_ref_iter: BlockedDataset2DIter<'a, i8, PhaseReference>,
+           class_ref_iter: Option<BlockedDataset2DIter<'a, i8, ClassReference>>, phase_ref_iter: Option<BlockedDataset2DIter<'a, i8, PhaseReference>>,
            class_pred_iter: BlockedDataset2DIter<'a, f32, ClassPrediction>, phase_pred_iter: BlockedDataset2DIter<'a, f32, PhasePrediction>)
            -> ComparisonIterator<'a>
     {
-        ComparisonIterator { extractor, species_id, sequence_id, rc, class_ref_iter, phase_ref_iter, class_pred_iter, phase_pred_iter }
+        let has_ref = extractor.has_ref();
+        ComparisonIterator { extractor, species_id, sequence_id, rc, has_ref, class_ref_iter, phase_ref_iter, class_pred_iter, phase_pred_iter }
     }
 
     pub fn get_extractor(&self) -> &ComparisonExtractor { self.extractor }
@@ -212,6 +225,7 @@ impl<'a> ComparisonIterator<'a>
     pub fn get_sequence_id(&self) -> SequenceID { self.sequence_id }
 
     pub fn get_rc(&self) -> bool { self.rc }
+
 }
 
 
@@ -221,21 +235,36 @@ impl<'a> Iterator for ComparisonIterator<'a>
 
     fn next(&mut self) -> Option<Self::Item>
     {
-        let class_ref = self.class_ref_iter.next();
-        let phase_ref = self.phase_ref_iter.next();
         let class_pred = self.class_pred_iter.next();
         let phase_pred = self.phase_pred_iter.next();
 
-        if class_ref.is_none() && phase_ref.is_none() && class_pred.is_none() && phase_pred.is_none()
-        { return None }
+        let (class_ref, phase_ref) =
+            if self.has_ref
+                {
+                let class_ref = self.class_ref_iter.as_mut().unwrap().next();
+                let phase_ref = self.phase_ref_iter.as_mut().unwrap().next();
 
-        if class_ref.is_none() || phase_ref.is_none() || class_pred.is_none() || phase_pred.is_none()
-        { panic!("Different lengths in base/class_pred/phase_pred iterators") }
+                if class_ref.is_none() && phase_ref.is_none() && class_pred.is_none() && phase_pred.is_none()
+                    { return None }
 
-        let class_ref = class_ref.expect("Unexpected end of class_ref iter");
-        let phase_ref = phase_ref.expect("Unexpected end of phase_ref iter");
-        let class_pred = class_pred.expect("Unexpected end of class_pred iter");
-        let phase_pred = phase_pred.expect("Unexpected end of phase_pred iter");
+                if class_ref.is_none() || phase_ref.is_none() || class_pred.is_none() || phase_pred.is_none()
+                    { panic!("Different lengths in class_ref/phase_ref/class_pred/phase_pred iterators") }
+
+                (class_ref.unwrap(), phase_ref.unwrap())
+                }
+            else
+                {
+                if class_pred.is_none() && phase_pred.is_none()
+                    { return None }
+
+                if class_pred.is_none() || phase_pred.is_none()
+                    { panic!("Different lengths in class_pred/phase_pred iterators") }
+
+                (ClassReference::default(), PhaseReference::default())
+                };
+
+        let class_pred = class_pred.unwrap();
+        let phase_pred = phase_pred.unwrap();
 
         return Some((class_ref, phase_ref, class_pred, phase_pred))
     }

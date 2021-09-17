@@ -167,11 +167,13 @@ impl RawHelixerGenome
     }
 
     // For pre-annotated
-    pub fn get_phases_raw(&self) -> Result<Dataset>
+    pub fn get_phases_raw(&self) -> Result<Option<Dataset>>
     {
+        if !self.genome_file.link_exists("data/phases") { return Ok(None); }
+
         let dataset = self.genome_file.dataset("data/phases")?;
         self.validate_dataset_shape_blocksize_array(&dataset, PHASE_DATASIZE)?;
-        Ok(dataset)
+        Ok(Some(dataset))
     }
 
     pub fn get_sample_weights_raw(&self) -> Result<Dataset>
@@ -237,11 +239,13 @@ impl RawHelixerGenome
     }
 
     // For pre-annotated
-    pub fn get_y_raw(&self) -> Result<Dataset>
+    pub fn get_y_raw(&self) -> Result<Option<Dataset>>
     {
+        if !self.genome_file.link_exists("data/y") { return Ok(None); }
+
         let dataset = self.genome_file.dataset("data/y")?;
         self.validate_dataset_shape_blocksize_array(&dataset, Y_DATASIZE)?;
-        Ok(dataset)
+        Ok(Some(dataset))
     }
 
 }

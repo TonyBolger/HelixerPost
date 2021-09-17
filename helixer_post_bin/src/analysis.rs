@@ -33,6 +33,8 @@ impl<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>>
         Analyzer { bp_extractor, comp_extractor, window_size, edge_threshold, peak_threshold, min_coding_length }
     }
 
+    pub fn has_ref(&self) -> bool { self.comp_extractor.has_ref() }
+
     fn process_sequence_1d<W:Write>(&self, species: &Species, seq: &Sequence, rev: bool, bp_iter: BasePredictionWindowThresholdIterator<TC, TP>,
                                     gene_idx: &mut usize, rater: &mut SequenceRater, gff_writer: &mut GffWriter<W>) -> (usize, usize)
     {
@@ -77,12 +79,13 @@ impl<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>>
 
         let fwd_bp_iter =
             BasePredictionWindowThresholdIterator::new(self.bp_extractor.fwd_iterator(id), self.window_size, self.edge_threshold, self.peak_threshold).unwrap();
+
         let mut fwd_comp_rater = SequenceRater::new(self.comp_extractor.fwd_iterator(id), seq.get_length() as usize);
 
         let (fwd_window_count, fwd_window_length_total) = self.process_sequence_1d(species, seq, false, fwd_bp_iter, &mut gene_idx, &mut fwd_comp_rater, gff_writer);
         let fwd_seq_rating = fwd_comp_rater.calculate_stats();
         println!("Forward for Sequence {} - ID {}", seq.get_name(), id.inner());
-        fwd_seq_rating.dump();
+        fwd_seq_rating.dump(self.comp_extractor.has_ref());
 
         fwd_rating.accumulate(&fwd_seq_rating);
 
@@ -93,7 +96,7 @@ impl<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>>
         let (rev_window_count, rev_window_length_total) = self.process_sequence_1d(species, seq, true, rev_bp_iter, &mut gene_idx, &mut rev_comp_rater, gff_writer);
         let rev_seq_rating = rev_comp_rater.calculate_stats();
         println!("Reverse for Sequence {} - ID {}", seq.get_name(), id.inner());
-        rev_seq_rating.dump();
+        rev_seq_rating.dump(self.comp_extractor.has_ref());
 
         rev_rating.accumulate(&rev_seq_rating);
 

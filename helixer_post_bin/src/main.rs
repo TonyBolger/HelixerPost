@@ -62,17 +62,17 @@ fn main()
         }
 
         println!("Forward for Species {} - {}", species.get_name(), id.inner() );
-        fwd_species_rating.dump();
+        fwd_species_rating.dump(analyzer.has_ref());
 
         println!("Reverse for Species {} - {}", species.get_name(), id.inner() );
-        rev_species_rating.dump();
+        rev_species_rating.dump(analyzer.has_ref());
 
         let mut species_rating = SequenceRating::new();
         species_rating.accumulate(&fwd_species_rating);
         species_rating.accumulate(&rev_species_rating);
 
         println!("Total for Species {} - {}", species.get_name(), id.inner() );
-        species_rating.dump();
+        species_rating.dump(analyzer.has_ref());
     }
 
     println!("Total: {}bp across {} windows", total_length, total_count);
