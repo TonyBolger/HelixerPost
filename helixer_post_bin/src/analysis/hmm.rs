@@ -1238,7 +1238,7 @@ impl PartialOrd for HmmEval {
 
 
 
-const MAX_EVALS: u64 = 100_000_000;
+const MAX_EVALS: u64 = 100_000_000_000;
 
 pub struct PredictionHmm
 {
