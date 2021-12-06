@@ -36,7 +36,7 @@ Using 100bp sliding window for genic detection, 0.1 edge threshold, 0.8 peak thr
 
 ### Two Step: 
 
-`carbo build --release`
+`cargo build --release`
 
 `./target/release/helixer_post_bin genome_data.h5 predictions.h5 100 0.1 0.8 60 output.gff`
 
