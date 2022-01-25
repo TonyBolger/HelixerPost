@@ -23,8 +23,43 @@ Currently it's also necessary to manually build the 'lzf' compression support fr
 `sudo cp liblzf_filter.so /usr/lib/x86_64-linux-gnu/hdf5/plugins`
 
 
+## Concept
+HelixerPost uses a sliding window assessment to determine regions of the genome which are likely gene containing.
+This is then followed by a Hidden Markov Model to convert the base class and coding phase predictions within
+that window into one or more gene models, while respecting prior biological knowledge regarding start / stop
+codons, RNA splicing etc.  
+   
+To determine the gene-containing windows, a sliding window of the configured width (e.g. 100bp) are assessed 
+for intergenic vs genic (UTR/Coding/Intron) content. The candidate gene containing region starts once the mean 
+genic score within the window exceeds the edge threshold, and continues until the mean genic score drops below 
+that window. The candidate region is accepted if it also contains at least one window with a genic score above 
+the required peak threshold.
 
-## Usage
+
+
+## Parameters
+
+`HelixerPost <genome.h5> <predictions.h5> <window_size> <edge_thresh> <peak_thresh> <min_coding_length> <output.gff>`
+
+genome.h5: The path of the HDF5 formatted genome which was used as input to Helixer itself 
+
+predictions.h5: The path of the HDF5 formatted output from Helixer, containing the base-level predictions
+
+window_size: This determines the number of bases averaged during the sliding window approach (e.g. 100bp)
+
+edge_thresh: This threshold specifies the genic score which defines the start / end boundaries of each 
+candidate region (e.g. 0.1)
+
+peak_thresh: This threshold specifies the minimum peak genic score required to accept the candidate region 
+(e.g. 0.8)
+
+min_coding_length: The output of the HMM is filtered to remove genes with a total coding length shorter than 
+this value (e.g. 60)
+
+output.gff: The path for the output GFF file 
+
+
+## Example Usage
 
 Using 100bp sliding window for genic detection, 0.1 edge threshold, 0.8 peak threshold (before HMM)
 

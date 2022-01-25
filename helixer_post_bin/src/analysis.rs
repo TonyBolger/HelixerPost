@@ -60,7 +60,7 @@ impl<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>>
                 for (gene_regions, coding_length) in genes.iter()
                 { rater.rate_regions(start_pos, &gene_regions, *coding_length < self.min_coding_length); }
 
-                let gff_records = hmm_solution_to_gff(genes, species.get_name(), seq.get_name(), "HelixerPost",
+                let gff_records = hmm_solution_to_gff(genes, species.get_name(), seq.get_name(), "Helixer",
                                                       rev, start_pos, seq.get_length(), self.min_coding_length, gene_idx);
                 gff_writer.write_records(&gff_records).expect("Failed to write to GFF");
             } else { panic!("No solution at {} {} - {}", seq.get_name(), start_pos, end_pos); }
