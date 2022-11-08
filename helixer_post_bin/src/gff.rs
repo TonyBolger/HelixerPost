@@ -1,26 +1,19 @@
-
-
-
-use std::io::{BufWriter, Write};
 use std::fmt::{Display, Formatter};
+use std::io::{BufWriter, Write};
 
 #[derive(Copy, Clone, Eq, PartialEq)]
-pub enum GffFeature
-{
+pub enum GffFeature {
     Gene,
     MRNA,
     Exon,
     FivePrimeUTR,
     CDS,
-    ThreePrimeUTR
+    ThreePrimeUTR,
 }
 
-impl GffFeature
-{
-    pub fn as_str(self) -> &'static str
-    {
-        match self
-        {
+impl GffFeature {
+    pub fn as_str(self) -> &'static str {
+        match self {
             GffFeature::Gene => "gene",
             GffFeature::MRNA => "mRNA",
             GffFeature::Exon => "exon",
@@ -31,83 +24,69 @@ impl GffFeature
     }
 }
 
-impl Display for GffFeature
-{
+impl Display for GffFeature {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
-
 #[derive(Copy, Clone, Eq, PartialEq)]
-pub enum GffStrand
-{
+pub enum GffStrand {
     Forward,
-    Reverse
+    Reverse,
 }
 
-impl GffStrand
-{
-    pub fn other(self) -> GffStrand
-    {
-        match self
-        {
+impl GffStrand {
+    pub fn other(self) -> GffStrand {
+        match self {
             GffStrand::Forward => GffStrand::Reverse,
             GffStrand::Reverse => GffStrand::Forward,
         }
     }
 
-    pub fn from_rev(rev: bool) -> GffStrand { if rev { GffStrand::Reverse } else { GffStrand::Forward } }
+    pub fn from_rev(rev: bool) -> GffStrand {
+        if rev {
+            GffStrand::Reverse
+        } else {
+            GffStrand::Forward
+        }
+    }
 
-    pub fn as_str(self) -> &'static str
-    {
-        match self
-        {
+    pub fn as_str(self) -> &'static str {
+        match self {
             GffStrand::Forward => "+",
             GffStrand::Reverse => "-",
         }
     }
 }
 
-
-
-
-
 #[derive(Copy, Clone, Eq, PartialEq)]
-pub enum GffPhase
-{
-    Zero=0,
-    One=1,
-    Two=2
+pub enum GffPhase {
+    Zero = 0,
+    One = 1,
+    Two = 2,
 }
 
-impl GffPhase
-{
-    pub fn as_str(self) -> &'static str
-    {
-        match self
-        {
+impl GffPhase {
+    pub fn as_str(self) -> &'static str {
+        match self {
             GffPhase::Zero => "0",
             GffPhase::One => "1",
-            GffPhase::Two => "2"
+            GffPhase::Two => "2",
         }
     }
 }
 
-
-impl From<u64> for GffPhase
-{
+impl From<u64> for GffPhase {
     fn from(offset: u64) -> Self {
-        match offset % 3
-            {
+        match offset % 3 {
             0 => GffPhase::Zero,
             1 => GffPhase::Two, // Phase means 'bases left to read', so counts down - Because biology
             2 => GffPhase::One,
-            _ => panic!("Math is broken")
-            }
+            _ => panic!("Math is broken"),
+        }
     }
 }
-
 
 /*
 
@@ -123,10 +102,7 @@ impl From<u64> for GffPhase
 
  */
 
-
-
-pub struct GffRecord
-{
+pub struct GffRecord {
     sequence: String,
     source: String,
     feature: GffFeature,
@@ -135,77 +111,113 @@ pub struct GffRecord
     score: Option<f32>,
     strand: Option<GffStrand>,
     phase: Option<GffPhase>,
-    attributes: String
+    attributes: String,
 }
 
-impl GffRecord
-{
-    pub fn new(sequence: String, source: String, feature: GffFeature, start: u64, end: u64, score: Option<f32>,
-               strand: Option<GffStrand>, phase: Option<GffPhase>, attributes: String) -> GffRecord
-    {
-        GffRecord { sequence, source, feature, start, end, score, strand, phase, attributes }
+impl GffRecord {
+    pub fn new(
+        sequence: String,
+        source: String,
+        feature: GffFeature,
+        start: u64,
+        end: u64,
+        score: Option<f32>,
+        strand: Option<GffStrand>,
+        phase: Option<GffPhase>,
+        attributes: String,
+    ) -> GffRecord {
+        GffRecord {
+            sequence,
+            source,
+            feature,
+            start,
+            end,
+            score,
+            strand,
+            phase,
+            attributes,
+        }
     }
 
-    pub fn swap_strand(&mut self, len: u64)
-    {
+    pub fn swap_strand(&mut self, len: u64) {
         let start = self.start;
         let end = self.end;
 
-        self.end=1+len-start;
-        self.start=1+len-end;
+        self.end = 1 + len - start;
+        self.start = 1 + len - end;
 
-        if let Some(strand) = self.strand { self.strand=Some(strand.other())} ;
+        if let Some(strand) = self.strand {
+            self.strand = Some(strand.other())
+        };
     }
 
-    pub fn get_sequence(&self) -> &String { &self.sequence }
+    pub fn get_sequence(&self) -> &String {
+        &self.sequence
+    }
 
-    pub fn get_source(&self) -> &String { &self.source }
+    pub fn get_source(&self) -> &String {
+        &self.source
+    }
 
-    pub fn get_start(&self) -> u64 { self.start }
+    pub fn get_start(&self) -> u64 {
+        self.start
+    }
 
-    pub fn get_end(&self) -> u64 { self.end }
+    pub fn get_end(&self) -> u64 {
+        self.end
+    }
 
-    pub fn get_score(&self) -> Option<f32> { self.score }
+    pub fn get_score(&self) -> Option<f32> {
+        self.score
+    }
 
-    pub fn get_strand(&self) -> Option<GffStrand> { self.strand }
+    pub fn get_strand(&self) -> Option<GffStrand> {
+        self.strand
+    }
 
-    pub fn get_phase(&self) -> Option<GffPhase> { self.phase }
+    pub fn get_phase(&self) -> Option<GffPhase> {
+        self.phase
+    }
 
-    pub fn get_attributes(&self) -> &String { &self.attributes }
-
-
-
+    pub fn get_attributes(&self) -> &String {
+        &self.attributes
+    }
 }
 
-
-pub struct GffWriter<W: Write>
-{
-    writer: BufWriter<W>
+pub struct GffWriter<W: Write> {
+    writer: BufWriter<W>,
 }
 
-impl<W: Write> GffWriter<W>
-{
-    pub fn new(writer: BufWriter<W>) -> GffWriter<W>
-    {
+impl<W: Write> GffWriter<W> {
+    pub fn new(writer: BufWriter<W>) -> GffWriter<W> {
         GffWriter { writer }
     }
 
-    pub fn write_record(&mut self, rec: & GffRecord) -> std::io::Result<()>
-    {
-        let score = rec.score.map_or(".".to_owned(), |v| {format!("{}", v)});
-        let strand = rec.strand.map_or(".", |v| { v.as_str() });
-        let phase = rec.phase.map_or(".", |v| { v.as_str() });
+    pub fn write_record(&mut self, rec: &GffRecord) -> std::io::Result<()> {
+        let score = rec.score.map_or(".".to_owned(), |v| format!("{}", v));
+        let strand = rec.strand.map_or(".", |v| v.as_str());
+        let phase = rec.phase.map_or(".", |v| v.as_str());
 
-        write!(self.writer, "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
-                       rec.sequence, rec.source, rec.feature, rec.start, rec.end, score, strand, phase, rec.attributes)
+        write!(
+            self.writer,
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+            rec.sequence,
+            rec.source,
+            rec.feature,
+            rec.start,
+            rec.end,
+            score,
+            strand,
+            phase,
+            rec.attributes
+        )
     }
 
-    pub fn write_records(&mut self, recs: & [GffRecord]) -> std::io::Result<()>
-    {
-        for rec in recs
-            { self.write_record(rec)? }
+    pub fn write_records(&mut self, recs: &[GffRecord]) -> std::io::Result<()> {
+        for rec in recs {
+            self.write_record(rec)?
+        }
 
         Ok(())
     }
 }
-
