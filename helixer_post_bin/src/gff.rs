@@ -209,7 +209,7 @@ impl<W: Write> GffWriter<W> {
         const GFF_VERSION: &'static str = "3.2.1";
         write!(self.writer, "##gff-version {}\n", GFF_VERSION)?;
         if let Some(species) = species {
-            write!(self.writer, "##{}\n", species)?;
+            write!(self.writer, "##species {}\n", species)?;
         }
         if let Some(helixer_model_md5sum) = helixer_model_md5sum {
             write!(self.writer, "# {}\n", helixer_model_md5sum)?;
