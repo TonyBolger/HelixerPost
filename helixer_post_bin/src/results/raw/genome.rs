@@ -28,8 +28,8 @@ pub enum ErrSamples
 }
 */
 
-type SeqidsType = FixedAscii<[u8; 50]>;
-type SpeciesType = FixedAscii<[u8; 25]>;
+type SeqidsType = FixedAscii<50>;
+type SpeciesType = FixedAscii<25>;
 
 impl RawHelixerGenome {
     pub fn new(
