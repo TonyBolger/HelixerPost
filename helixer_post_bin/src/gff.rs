@@ -204,7 +204,7 @@ impl<W: Write> GffWriter<W> {
     pub fn write_global_header(
         &mut self,
         species: Option<&str>,
-        helixer_model_md5sum: Option<&str>,
+        helixer_model_md5sum: Option<String>,
     ) -> std::io::Result<()> {
         const GFF_VERSION: &'static str = "3.2.1";
         write!(self.writer, "##gff-version {}\n", GFF_VERSION)?;

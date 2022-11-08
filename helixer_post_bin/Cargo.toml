@@ -5,5 +5,5 @@ authors = ["Tony Bolger <bolger.tony@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-hdf5 = "0.7.1"
-ndarray = "0.14.0"
+hdf5 = "0.8.1"
+ndarray = "0.15.6"
