@@ -50,6 +50,21 @@ fn main() {
     let gff_file = File::create(gff_filename).unwrap();
     let mut gff_writer = GffWriter::new(BufWriter::new(gff_file));
 
+    // There should only ever be one species for the gff output
+    assert_eq!(
+        helixer_res.get_all_species().len(),
+        1,
+        "Error: Multiple Species are not allowed for GFF output."
+    );
+    let model_md5sum = None; // TODO: this should fetch <hdf5>.attrs['model_md5sum']
+    let species_name = helixer_res.get_all_species().first().map(|x| x.get_name());
+    gff_writer
+        .write_global_header(species_name, model_md5sum)
+        .expect(&*format!(
+            "Error: Could not write header to file {}.",
+            gff_filename
+        ));
+
     for species in helixer_res.get_all_species() {
         let mut fwd_species_rating = SequenceRating::new();
         let mut rev_species_rating = SequenceRating::new();
@@ -62,6 +77,13 @@ fn main() {
         );
         for seq_id in helixer_res.get_sequences_for_species(id) {
             let seq = helixer_res.get_sequence_by_id(*seq_id);
+            gff_writer
+                .write_region_header(seq.get_name(), seq.get_length())
+                .expect(&*format!(
+                    "Error: Could not write sequence-region header to file {}.",
+                    gff_filename
+                ));
+
             let (count, length) = analyzer.process_sequence(
                 species,
                 seq,
