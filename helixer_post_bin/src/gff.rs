@@ -193,6 +193,45 @@ impl<W: Write> GffWriter<W> {
         GffWriter { writer }
     }
 
+    /// Writes header for the top of the GFF3 file
+    /// and optionally includes species name and Helixer model info
+    ///
+    /// # Arguments
+    ///
+    /// * `species` - An Option containing the species name
+    /// * `helixer_model_md5sum` - An Option containing the md5checksum
+    /// and file path information from Helixer (as found in h5.attrs\["model_md5sum"\] in the predictions output.)
+    pub fn write_global_header(
+        &mut self,
+        species: Option<&str>,
+        helixer_model_md5sum: Option<&str>,
+    ) -> std::io::Result<()> {
+        const GFF_VERSION: &'static str = "3.2.1";
+        write!(self.writer, "##gff-version {}\n", GFF_VERSION)?;
+        if let Some(species) = species {
+            write!(self.writer, "##{}\n", species)?;
+        }
+        if let Some(helixer_model_md5sum) = helixer_model_md5sum {
+            write!(self.writer, "# {}\n", helixer_model_md5sum)?;
+        }
+        Ok(())
+    }
+
+    /// Writes header for each region in the GFF3 file indicating the name and boundaries of the region. For Helixer output, regions always start at 1.
+    ///
+    /// # Arguments
+    ///
+    /// * `sequence_name` - name of the sequence aka region
+    /// * `sequence length` - length of the sequence aka region, since sequences start at 1 this will also be the end of the region.
+    pub fn write_region_header(
+        &mut self,
+        sequence_name: &str,
+        sequence_length: u64,
+    ) -> std::io::Result<()> {
+        let region_info = format!("{} {} {}", sequence_name, 1, sequence_length);
+        write!(self.writer, "##sequence-region {}\n", region_info)
+    }
+
     pub fn write_record(&mut self, rec: &GffRecord) -> std::io::Result<()> {
         let score = rec.score.map_or(".".to_owned(), |v| format!("{}", v));
         let strand = rec.strand.map_or(".", |v| v.as_str());
