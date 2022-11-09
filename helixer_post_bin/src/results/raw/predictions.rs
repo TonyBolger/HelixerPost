@@ -1,5 +1,5 @@
 use super::super::{Error, Result};
-use hdf5::{types::*, Dataset, File};
+use hdf5::{types::VarLenUnicode, Dataset, File};
 use std::path::Path;
 
 pub struct RawHelixerPredictions {
