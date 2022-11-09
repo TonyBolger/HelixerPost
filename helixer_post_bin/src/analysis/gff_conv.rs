@@ -1,5 +1,3 @@
-
-
 /*
 
 Chr1    phytozomev10    gene    91376   95651   .       +       .       ID=AT1G01220.TAIR10;Name=AT1G01220
@@ -29,79 +27,112 @@ sequence: String, source: String, feature: GffFeature, start: u64, end: u64, sco
 
  */
 
-
-
-use crate::gff::{GffRecord, GffStrand, GffFeature, GffPhase};
-use crate::analysis::hmm::{HmmStateRegion, HmmAnnotationLabel};
+use crate::analysis::hmm::{HmmAnnotationLabel, HmmStateRegion};
+use crate::gff::{GffFeature, GffPhase, GffRecord, GffStrand};
 
 // generate gene, mRNA and exon records, based on UTR5/CDS/UTR3
-fn generate_gff_aggregate_records(recs: Vec<GffRecord>, sequence: &str, source: &str, strand: Option<GffStrand>, gene_name: &str) -> Vec<GffRecord>
-{
-    if recs.len()==0
-    { return Vec::new(); }
+fn generate_gff_aggregate_records(
+    recs: Vec<GffRecord>,
+    sequence: &str,
+    source: &str,
+    strand: Option<GffStrand>,
+    gene_name: &str,
+) -> Vec<GffRecord> {
+    if recs.len() == 0 {
+        return Vec::new();
+    }
 
-    let mut maybe_transcript_start : Option<u64> = None;
-    let mut maybe_transcript_end : Option<u64> = None;
+    let mut maybe_transcript_start: Option<u64> = None;
+    let mut maybe_transcript_end: Option<u64> = None;
 
-    let mut maybe_exon_start : Option<u64> = None;
-    let mut maybe_exon_end : Option<u64> = None;
+    let mut maybe_exon_start: Option<u64> = None;
+    let mut maybe_exon_end: Option<u64> = None;
 
     let mut exon_ranges = Vec::new();
 
-    for rec in recs.iter()
-    {
-        if maybe_transcript_start == None { maybe_transcript_start = Some(rec.get_start()); }
+    for rec in recs.iter() {
+        if maybe_transcript_start == None {
+            maybe_transcript_start = Some(rec.get_start());
+        }
         maybe_transcript_end = Some(rec.get_end());
 
-        if let (Some(exon_start), Some(exon_end)) = (maybe_exon_start, maybe_exon_end)
-        {
-            if exon_end+1 < rec.get_start()
-            {
+        if let (Some(exon_start), Some(exon_end)) = (maybe_exon_start, maybe_exon_end) {
+            if exon_end + 1 < rec.get_start() {
                 exon_ranges.push((exon_start, exon_end));
                 maybe_exon_start = None;
             }
         }
 
-        if maybe_exon_start == None { maybe_exon_start = Some(rec.get_start()); }
+        if maybe_exon_start == None {
+            maybe_exon_start = Some(rec.get_start());
+        }
         maybe_exon_end = Some(rec.get_end());
     }
 
-    if let (Some(exon_start), Some(exon_end)) = (maybe_exon_start, maybe_exon_end)
-    { exon_ranges.push((exon_start, exon_end)); }
-
+    if let (Some(exon_start), Some(exon_end)) = (maybe_exon_start, maybe_exon_end) {
+        exon_ranges.push((exon_start, exon_end));
+    }
 
     let transcript_start = maybe_transcript_start.unwrap();
     let transcript_end = maybe_transcript_end.unwrap();
 
-    let mut recs_out = Vec::with_capacity(2+recs.len()*2);
+    let mut recs_out = Vec::with_capacity(2 + recs.len() * 2);
 
     let gene_attributes = format!("ID={}", gene_name);
-    let gene_rec = GffRecord::new(sequence.to_owned(), source.to_owned(), GffFeature::Gene,
-                                  transcript_start, transcript_end, None, strand, None, gene_attributes);
+    let gene_rec = GffRecord::new(
+        sequence.to_owned(),
+        source.to_owned(),
+        GffFeature::Gene,
+        transcript_start,
+        transcript_end,
+        None,
+        strand,
+        None,
+        gene_attributes,
+    );
     recs_out.push(gene_rec);
 
     let mrna_attributes = format!("ID={}.1;Parent={}", gene_name, gene_name);
-    let mrna_rec = GffRecord::new(sequence.to_owned(), source.to_owned(), GffFeature::MRNA,
-                                  transcript_start, transcript_end, None, strand, None, mrna_attributes);
+    let mrna_rec = GffRecord::new(
+        sequence.to_owned(),
+        source.to_owned(),
+        GffFeature::MRNA,
+        transcript_start,
+        transcript_end,
+        None,
+        strand,
+        None,
+        mrna_attributes,
+    );
     recs_out.push(mrna_rec);
 
     let mut exon_range_iter = exon_ranges.into_iter();
     let mut current_exon_end = None;
     let mut exon_idx = 1;
 
-    for rec in recs
-    {
-        if current_exon_end.is_none() || current_exon_end.unwrap() < rec.get_start()
-        {
+    for rec in recs {
+        if current_exon_end.is_none() || current_exon_end.unwrap() < rec.get_start() {
             let (exon_start, exon_end) = exon_range_iter.next().unwrap();
-            let exon_attributes = format!("ID={}.1.exon.{};Parent={}.1", gene_name, exon_idx, gene_name);
+            let exon_attributes = format!(
+                "ID={}.1.exon.{};Parent={}.1",
+                gene_name, exon_idx, gene_name
+            );
 
-            let exon_rec = GffRecord::new(sequence.to_owned(), source.to_owned(), GffFeature::Exon,
-                                          exon_start, exon_end, None, strand, None, exon_attributes);
+            let exon_rec = GffRecord::new(
+                sequence.to_owned(),
+                source.to_owned(),
+                GffFeature::Exon,
+                exon_start,
+                exon_end,
+                None,
+                strand,
+                None,
+                exon_attributes,
+            );
 
             recs_out.push(exon_rec);
 
-            exon_idx+=1;
+            exon_idx += 1;
             current_exon_end = Some(exon_end);
         }
 
@@ -111,8 +142,14 @@ fn generate_gff_aggregate_records(recs: Vec<GffRecord>, sequence: &str, source: 
     recs_out
 }
 
-fn convert_regions_to_gff(regions: Vec<HmmStateRegion>, sequence: &str, source: &str, strand: Option<GffStrand>, position: usize, gene_name: &str) -> Vec<GffRecord>
-{
+fn convert_regions_to_gff(
+    regions: Vec<HmmStateRegion>,
+    sequence: &str,
+    source: &str,
+    strand: Option<GffStrand>,
+    position: usize,
+    gene_name: &str,
+) -> Vec<GffRecord> {
     let mut utr5_idx = 0;
     let mut cds_idx = 0;
     let mut utr3_idx = 0;
@@ -121,73 +158,116 @@ fn convert_regions_to_gff(regions: Vec<HmmStateRegion>, sequence: &str, source: 
 
     let mut region_vec = Vec::new();
 
-    for region in regions.iter()
-    {
-        let maybe_feature_and_attributes = match region.get_annotation_label()
-        {
+    for region in regions.iter() {
+        let maybe_feature_and_attributes = match region.get_annotation_label() {
             HmmAnnotationLabel::Intergenic => None, //panic!("Intergenic should be removed before now"),
-            HmmAnnotationLabel::UTR5 => { utr5_idx+=1; Some((GffFeature::FivePrimeUTR, format!("ID={}.1.five_prime_UTR.{};Parent={}.1", gene_name, utr5_idx, gene_name))) },
+            HmmAnnotationLabel::UTR5 => {
+                utr5_idx += 1;
+                Some((
+                    GffFeature::FivePrimeUTR,
+                    format!(
+                        "ID={}.1.five_prime_UTR.{};Parent={}.1",
+                        gene_name, utr5_idx, gene_name
+                    ),
+                ))
+            }
             HmmAnnotationLabel::Start => panic!("Start should be Coding"),
-            HmmAnnotationLabel::Coding => { cds_idx+=1; Some((GffFeature::CDS, format!("ID={}.1.CDS.{};Parent={}.1", gene_name, cds_idx, gene_name))) },
+            HmmAnnotationLabel::Coding => {
+                cds_idx += 1;
+                Some((
+                    GffFeature::CDS,
+                    format!("ID={}.1.CDS.{};Parent={}.1", gene_name, cds_idx, gene_name),
+                ))
+            }
             HmmAnnotationLabel::Intron => None,
             HmmAnnotationLabel::Stop => panic!("Stop should be Coding"),
-            HmmAnnotationLabel::UTR3 => { utr3_idx+=1; Some((GffFeature::ThreePrimeUTR, format!("ID={}.1.three_prime_UTR.{};Parent={}.1", gene_name, utr3_idx, gene_name))) }
+            HmmAnnotationLabel::UTR3 => {
+                utr3_idx += 1;
+                Some((
+                    GffFeature::ThreePrimeUTR,
+                    format!(
+                        "ID={}.1.three_prime_UTR.{};Parent={}.1",
+                        gene_name, utr3_idx, gene_name
+                    ),
+                ))
+            }
         };
 
-        if let Some((feature, attributes)) = maybe_feature_and_attributes
-        {
-            let start = (region.get_start_pos()+position+1) as u64;
-            let end = (region.get_end_pos()+position) as u64;
+        if let Some((feature, attributes)) = maybe_feature_and_attributes {
+            let start = (region.get_start_pos() + position + 1) as u64;
+            let end = (region.get_end_pos() + position) as u64;
 
-            let phase = if region.get_annotation_label() == HmmAnnotationLabel::Coding
-                { Some(GffPhase::from(coding_offset)) }
-            else
-                { None };
+            let phase = if region.get_annotation_label() == HmmAnnotationLabel::Coding {
+                Some(GffPhase::from(coding_offset))
+            } else {
+                None
+            };
 
             let rec = GffRecord::new(
-                sequence.to_owned(), source.to_owned(), feature, start, end, None, strand, phase, attributes);
+                sequence.to_owned(),
+                source.to_owned(),
+                feature,
+                start,
+                end,
+                None,
+                strand,
+                phase,
+                attributes,
+            );
 
             region_vec.push(rec);
 
-            if region.get_annotation_label() == HmmAnnotationLabel::Coding
-                { coding_offset+=region.len() as u64; }
+            if region.get_annotation_label() == HmmAnnotationLabel::Coding {
+                coding_offset += region.len() as u64;
+            }
         }
     }
 
     region_vec
 }
 
-
-pub fn hmm_solution_to_gff(genes: Vec<(Vec<HmmStateRegion>, usize)>, species: &str, sequence: &str, source: &str,
-                           rev: bool, position: usize, sequence_length: u64, min_coding_length: usize, gene_idx: &mut usize) -> Vec<GffRecord>
-{
-//        if genes.len() > 1
-//            { println!("{} genes at {} in {}", genes.len(), position, sequence); }
+pub fn hmm_solution_to_gff(
+    genes: Vec<(Vec<HmmStateRegion>, usize)>,
+    species: &str,
+    sequence: &str,
+    source: &str,
+    rev: bool,
+    position: usize,
+    sequence_length: u64,
+    min_coding_length: usize,
+    gene_idx: &mut usize,
+) -> Vec<GffRecord> {
+    //        if genes.len() > 1
+    //            { println!("{} genes at {} in {}", genes.len(), position, sequence); }
 
     let mut all_gff_recs = Vec::new();
 
     let strand = Some(GffStrand::Forward); // Initially generate everything as forward
 
-    for (gene_regions, coding_length) in genes
-        {
-        if coding_length >= min_coding_length
-            {
+    for (gene_regions, coding_length) in genes {
+        if coding_length >= min_coding_length {
             let gene_name = format!("{}_{}_{:06}", species, sequence, *gene_idx);
-            let gene_gff_recs = convert_regions_to_gff(gene_regions, sequence, source, strand, position, &gene_name);
-            let gene_gff_recs = generate_gff_aggregate_records(gene_gff_recs, sequence, source, strand, &gene_name);
+            let gene_gff_recs = convert_regions_to_gff(
+                gene_regions,
+                sequence,
+                source,
+                strand,
+                position,
+                &gene_name,
+            );
+            let gene_gff_recs =
+                generate_gff_aggregate_records(gene_gff_recs, sequence, source, strand, &gene_name);
 
             all_gff_recs.extend(gene_gff_recs);
             *gene_idx += 1;
-            }
         }
+    }
 
-    if rev
-    {
-        for gff_recs in all_gff_recs.iter_mut()
-            { gff_recs.swap_strand(sequence_length); }
+    if rev {
+        for gff_recs in all_gff_recs.iter_mut() {
+            gff_recs.swap_strand(sequence_length);
+        }
     }
 
     all_gff_recs
 }
-
-

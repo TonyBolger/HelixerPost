@@ -1,62 +1,61 @@
-
 use super::super::{Error, Result};
 use hdf5::{Dataset, File};
 use std::path::Path;
 
-pub struct RawHelixerPredictions
-{
-    predictions_file: File
+pub struct RawHelixerPredictions {
+    predictions_file: File,
 }
 
 const CLASS_DATASIZE: usize = 4;
 const PHASE_DATASIZE: usize = 4;
 
-impl RawHelixerPredictions
-{
-    pub fn new(predictions_file_path: &Path) -> Result<RawHelixerPredictions>
-    {
+impl RawHelixerPredictions {
+    pub fn new(predictions_file_path: &Path) -> Result<RawHelixerPredictions> {
         let predictions_file = File::open(predictions_file_path)?;
         Ok(RawHelixerPredictions { predictions_file })
     }
 
-    pub fn get_class_raw(&self) -> Result<Dataset>
-    {
+    pub fn get_class_raw(&self) -> Result<Dataset> {
         let pred_dataset = self.predictions_file.dataset("predictions")?;
 
         let shape = pred_dataset.shape();
-        if shape.len()!=3
-            { return Err(Error::MismatchedDimensions(shape.len(), 3)); }
+        if shape.len() != 3 {
+            return Err(Error::MismatchedDimensions(shape.len(), 3));
+        }
 
-        if shape[2]!= CLASS_DATASIZE
-            { return Err(Error::MismatchedDataSize(shape[2], CLASS_DATASIZE)); }
+        if shape[2] != CLASS_DATASIZE {
+            return Err(Error::MismatchedDataSize(shape[2], CLASS_DATASIZE));
+        }
 
         Ok(pred_dataset)
     }
 
-    pub fn get_phase_raw(&self) -> Result<Dataset>
-    {
+    pub fn get_phase_raw(&self) -> Result<Dataset> {
         let phase_dataset = self.predictions_file.dataset("predictions_phase")?;
 
         let shape = phase_dataset.shape();
-        if shape.len()!=3
-            { return Err(Error::MismatchedDimensions(shape.len(), 3)); }
+        if shape.len() != 3 {
+            return Err(Error::MismatchedDimensions(shape.len(), 3));
+        }
 
         let (blocks, blocksize) = self.get_blocks_and_blocksize()?;
 
-        if shape[0]!= blocks
-            { return Err(Error::MismatchedBlockCount(shape[0], blocks)); }
+        if shape[0] != blocks {
+            return Err(Error::MismatchedBlockCount(shape[0], blocks));
+        }
 
-        if shape[1]!= blocksize
-            { return Err(Error::MismatchedDataSize(shape[1], blocksize)); }
+        if shape[1] != blocksize {
+            return Err(Error::MismatchedDataSize(shape[1], blocksize));
+        }
 
-        if shape[2]!= PHASE_DATASIZE
-            { return Err(Error::MismatchedDataSize(shape[2], PHASE_DATASIZE)); }
+        if shape[2] != PHASE_DATASIZE {
+            return Err(Error::MismatchedDataSize(shape[2], PHASE_DATASIZE));
+        }
 
         Ok(phase_dataset)
     }
 
-    pub fn get_blocks_and_blocksize(&self) -> Result<(usize, usize)>
-    {
+    pub fn get_blocks_and_blocksize(&self) -> Result<(usize, usize)> {
         let pred_dataset = self.get_class_raw()?;
         let shape = pred_dataset.shape();
 
@@ -65,5 +64,4 @@ impl RawHelixerPredictions
 
         Ok((blocks, blocksize))
     }
-
 }
