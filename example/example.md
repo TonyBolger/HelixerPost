@@ -19,11 +19,12 @@ helixer_post_bin genome_data.h5 predictions.h5 100 0.1 0.8 60 output.gff3
 ## expected output
 
 Using the provided data, the above should create the file 'output.gff3',
-and the contents there of are expected to be:
+and the contents there of are expected to be as follows (as of commit b674af9):
 
 ```
 ##gff-version 3.2.1
-##Oryza_brachyantha
+##species Oryza_brachyantha
+# f4f3f7bf629d02431241bfef18cb8ade  /home/ali/.local/share/Helixer/models/land_plant/land_plant_v0.3_a_0100.h5
 ##sequence-region NC_023163.2:1-21384 1 21384
 NC_023163.2:1-21384	Helixer	gene	17026	18898	.	+	.	ID=Oryza_brachyantha_NC_023163.2:1-21384_000001
 NC_023163.2:1-21384	Helixer	mRNA	17026	18898	.	+	.	ID=Oryza_brachyantha_NC_023163.2:1-21384_000001.1;Parent=Oryza_brachyantha_NC_023163.2:1-21384_000001
@@ -34,3 +35,4 @@ NC_023163.2:1-21384	Helixer	exon	17707	18898	.	+	.	ID=Oryza_brachyantha_NC_02316
 NC_023163.2:1-21384	Helixer	CDS	17707	18305	.	+	2	ID=Oryza_brachyantha_NC_023163.2:1-21384_000001.1.CDS.2;Parent=Oryza_brachyantha_NC_023163.2:1-21384_000001.1
 NC_023163.2:1-21384	Helixer	three_prime_UTR	18306	18898	.	+	.	ID=Oryza_brachyantha_NC_023163.2:1-21384_000001.1.three_prime_UTR.1;Parent=Oryza_brachyantha_NC_023163.2:1-21384_000001.1
 ```
+
