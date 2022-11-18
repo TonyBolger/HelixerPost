@@ -3,9 +3,11 @@ use helixer_post_bin::analysis::hmm::show_hmm_config;
 use helixer_post_bin::analysis::rater::SequenceRating;
 use helixer_post_bin::analysis::Analyzer;
 use helixer_post_bin::gff::GffWriter;
+use helixer_post_bin::results::raw::RawHelixerPredictions;
 use helixer_post_bin::results::HelixerResults;
 use std::fs::File;
 use std::io::BufWriter;
+use std::path::Path;
 use std::process::exit;
 
 fn main() {
@@ -56,8 +58,11 @@ fn main() {
         1,
         "Error: Multiple Species are not allowed for GFF output."
     );
-    let model_md5sum = None; // TODO: this should fetch <hdf5>.attrs['model_md5sum']
+    let rhg = RawHelixerPredictions::new(&Path::new(predictions_path))
+        .expect("Error: Something went wrong while accessing the predictions.");
+    let model_md5sum = rhg.get_model_md5sum().ok();
     let species_name = helixer_res.get_all_species().first().map(|x| x.get_name());
+
     gff_writer
         .write_global_header(species_name, model_md5sum)
         .expect(&*format!(
