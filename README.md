@@ -1,32 +1,35 @@
 # HelixerPost
 ## Dependencies
+### Rust
 A recent version of Rust (see https://www.rust-lang.org/tools/install)
 
-## hd5 libraries
+### hd5 libraries
 On fedora & co. you will need `hdf5-devel`, while on ubuntu & co. you will need `libhdf5-dev`.
 
-## hd5 lzf support
+### hd5 lzf support (Skip if unsure)
 If you need the 'lzf' compression support (no longer needed on recent Helixer versions), you will need to download it from h5py (https://pypi.org/project/h5py/) and manually build it as a shared library and install to the hdf5 plugins directory. This will also require a C toolchain - the system provided GCC should be fine. 
 
 `tar -xzvf h5py-3.2.1.tar.gz`
 
 `cd h5py-3.2.1/lzf/`
 
-### Fedora
+**Fedora**
+
 `gcc -O2 -fPIC -shared -Ilzf lzf/*.c lzf_filter.c -lhdf5 -o liblzf_filter.so`
 
 `sudo mkdir -p /usr/local/hdf5/lib/plugin`
 
 `sudo cp liblzf_filter.so /usr/local/hdf5/lib/plugin`
 
-### Ubuntu
+**Ubuntu**
+
 `gcc -O2 -fPIC -shared -Ilzf -I/usr/include/hdf5/serial/ lzf/*.c lzf_filter.c -lhdf5 -L/lib/x86_64-linux-gnu/hdf5/serial -o liblzf_filter.so`
 
 `sudo mkdir /usr/lib/x86_64-linux-gnu/hdf5/plugins`
 
 `sudo cp liblzf_filter.so /usr/lib/x86_64-linux-gnu/hdf5/plugins`
 
-## Building
+## Building HelixerPost
 
 `git clone https://github.com/TonyBolger/HelixerPost.git`
 
