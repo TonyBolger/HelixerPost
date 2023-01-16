@@ -1,8 +1,12 @@
 # HelixerPost
 ## Dependencies
-### hd5 libraries
+A recent version of Rust (see https://www.rust-lang.org/tools/install)
+
+## hd5 libraries
 On fedora & co. you will need `hdf5-devel`, while on ubuntu & co. you will need `libhdf5-dev`.
-Currently it's also necessary to manually build the 'lzf' compression support from h5py (https://pypi.org/project/h5py/) as a shared library and install to the hdf5 plugins directory
+
+## hd5 lzf support
+If you need the 'lzf' compression support (no longer needed on recent Helixer versions), you will need to download it from h5py (https://pypi.org/project/h5py/) and manually build it as a shared library and install to the hdf5 plugins directory. This will also require a C toolchain - the system provided GCC should be fine. 
 
 `tar -xzvf h5py-3.2.1.tar.gz`
 
@@ -22,6 +26,23 @@ Currently it's also necessary to manually build the 'lzf' compression support fr
 
 `sudo cp liblzf_filter.so /usr/lib/x86_64-linux-gnu/hdf5/plugins`
 
+## Building
+
+`git clone https://github.com/TonyBolger/HelixerPost.git`
+
+`cd HelixerPost`
+
+`cargo build --release`
+
+The resulting binary is './targets/release/helixer_post_bin'
+
+Running `./target/release/helixer_post_bin` should show the command line parameters, giving:
+
+`HelixerPost <genome.h5> <predictions.h5> <window_size> <edge_thresh> <peak_thresh> <min_coding_length> <output.gff>`
+
+In order for Helixer to find this binary, it needs to be on the PATH. The easiest way to achieve this is to copy 
+the binary to the bin folder in the virtual environment which you previously created for Helixer 
+(e.g. `path_to_Helixer/env/bin` )
 
 ## Concept
 HelixerPost uses a sliding window assessment to determine regions of the genome which are likely gene containing.
@@ -34,8 +55,6 @@ for intergenic vs genic (UTR/Coding/Intron) content. The candidate gene containi
 genic score within the window exceeds the edge threshold, and continues until the mean genic score drops below 
 that window. The candidate region is accepted if it also contains at least one window with a genic score above 
 the required peak threshold.
-
-
 
 ## Parameters
 
@@ -58,20 +77,13 @@ this value (e.g. 60)
 
 output.gff: The path for the output GFF file 
 
-
 ## Example Usage
 
 Using 100bp sliding window for genic detection, 0.1 edge threshold, 0.8 peak threshold (before HMM)
 
 60bp minimum CDS length per gene (after HMM)
 
-### One Step:
-
-`cargo run --release genome_data.h5 predictions.h5 100 0.1 0.8 60 output.gff`
-
-### Two Step: 
-
-`cargo build --release`
+From the HelixerPost dir:
 
 `./target/release/helixer_post_bin genome_data.h5 predictions.h5 100 0.1 0.8 60 output.gff`
 
