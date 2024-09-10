@@ -47,7 +47,9 @@ In order for Helixer to find this binary, it needs to be on the PATH. The easies
 the binary to the bin folder in the virtual environment which you previously created for Helixer 
 (e.g. `path_to_Helixer/env/bin` )
 
-## Ubuntu installation script
+## Ubuntu installer script
+
+Download the installer file (install_helixer_post.sh) from this repository and do the following
 
 ```
 chmod +x install_helixer_post.sh
