@@ -53,8 +53,6 @@ the binary to the bin folder in the virtual environment which you previously cre
 chmod +x install_helixer_post.sh
 ./install_helixer_post.sh
 
-After building the binary you will be prompted to create binary at a desired location, if not unsure you can simply copy paste the following
-/usr/local/bin
 ```
 After building the binary you will be prompted to create binary at a desired location, if not unsure you can simply copy paste the following
 
