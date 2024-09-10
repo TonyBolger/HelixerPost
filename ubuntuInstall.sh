@@ -46,6 +46,6 @@ if [ ! -d "$install_dir" ]; then
   sudo mkdir -p "$install_dir"
 fi
 
-sudo mv ./target/release/helixer_post_bin "$install_dir"/helixer_post
+sudo mv ./target/release/helixer_post_bin "$install_dir"/helixer_post_bin
 
 echo "HelixerPost has been installed successfully!"
