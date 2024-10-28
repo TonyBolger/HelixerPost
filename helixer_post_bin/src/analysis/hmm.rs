@@ -2,9 +2,55 @@ use crate::results::conv::{Bases, ClassPrediction, PhasePrediction};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
+
+fn convert_raw_pred<const N: usize>(raw_pred: &[f32; N]) -> [f64; N] {
+    let mut pred: [f64; N] = [0.0; N];
+
+    for i in 0..N {
+        pred[i] = raw_pred[i] as f64
+    }
+
+    pred
+}
+
+fn raw_pred_to_neg_log_prob<const N: usize>(raw_pred: &[f64; N], floor: f64) -> [f64; N] {
+
+    let mut neg_log_prob = [0.0; N];
+    for i in 0..N {
+        let adjusted_pred = raw_pred[i] as f64;
+
+        let adjusted_pred = if adjusted_pred > floor {
+            adjusted_pred
+        } else {
+            floor
+        };
+        neg_log_prob[i] = -f64::log2(adjusted_pred);
+    }
+
+    neg_log_prob
+}
+
+fn neg_log_prob_to_penalty<const N: usize>(neg_log_prob: &[f64; N]) -> [f64; N] {
+    let mut min_penalty = neg_log_prob[0];
+    for i in 1..N {
+        if neg_log_prob[i] < min_penalty {
+            min_penalty = neg_log_prob[i]
+        }
+    }
+
+    let mut penalty = [0.0; N];
+
+    for i in 0..N {
+        penalty[i] = neg_log_prob[i] - min_penalty;
+    }
+
+    penalty
+}
+
 #[derive(Clone, Copy)]
-struct ClassPredPenalty {
-    penalty: [f64; 4], // Ordering is intergenic, utr, coding, intron
+struct ClassPredPenalty { // Ordering is intergenic, utr, coding, intron
+    //neg_log_prob: [f64; 4], // Negated log probability, lower value is more likely
+    penalty: [f64; 4], // Penalty is adjusted negated log probability with min prob (most likely) subtracted from all
 }
 
 #[allow(dead_code)]
@@ -32,36 +78,18 @@ impl From<&ClassPrediction> for ClassPredPenalty {
     fn from(pred: &ClassPrediction) -> Self {
         let raw_pred = pred.get();
 
-        let mut penalty = [0.0; 4];
-        for i in 0..4 {
-            let adjusted_pred = raw_pred[i] as f64;
+        let converted_pred = convert_raw_pred(raw_pred);
+        let neg_log_prob = raw_pred_to_neg_log_prob(&converted_pred, CLASS_PRED_PROB_FLOOR);
+        let penalty = neg_log_prob_to_penalty(&neg_log_prob);
 
-            let adjusted_pred = if adjusted_pred > CLASS_PRED_PROB_FLOOR {
-                adjusted_pred
-            } else {
-                CLASS_PRED_PROB_FLOOR
-            };
-            penalty[i] = -f64::log2(adjusted_pred);
-        }
-
-        let mut min_penalty = penalty[0];
-        for i in 1..4 {
-            if penalty[i] < min_penalty {
-                min_penalty = penalty[i]
-            }
-        }
-
-        for i in 0..4 {
-            penalty[i] -= min_penalty;
-        }
-
-        ClassPredPenalty { penalty }
+        ClassPredPenalty { /*neg_log_prob,*/ penalty }
     }
 }
 
 #[derive(Clone, Copy)]
-struct PhasePredPenalty {
-    penalty: [f64; 4], // Ordering is non-coding, phase 0, phase 1, phase 2
+struct PhasePredPenalty { // Ordering is intergenic, utr, coding, intron
+    //neg_log_prob: [f64; 4], // Negated log probability, lower value is more likely
+    penalty: [f64; 4], // Penalty is adjusted negated log probability with min prob (most likely) subtracted from all
 }
 
 #[allow(dead_code)]
@@ -90,63 +118,64 @@ impl From<&PhasePrediction> for PhasePredPenalty {
     fn from(pred: &PhasePrediction) -> Self {
         let raw_pred = pred.get();
 
-        let mut penalty = [0.0; 4];
-        for i in 0..4 {
-            let adjusted_pred = raw_pred[i] as f64;
+        let converted_pred = convert_raw_pred(raw_pred);
+        let neg_log_prob = raw_pred_to_neg_log_prob(&converted_pred, PHASE_PRED_PROB_FLOOR);
+        let penalty = neg_log_prob_to_penalty(&neg_log_prob);
 
-            let adjusted_pred = if adjusted_pred > PHASE_PRED_PROB_FLOOR {
-                adjusted_pred
-            } else {
-                PHASE_PRED_PROB_FLOOR
-            };
-            penalty[i] = -f64::log2(adjusted_pred);
-        }
-
-        let mut min_penalty = penalty[0];
-        for i in 1..4 {
-            if penalty[i] < min_penalty {
-                min_penalty = penalty[i]
-            }
-        }
-
-        for i in 0..4 {
-            penalty[i] -= min_penalty;
-        }
-
-        PhasePredPenalty { penalty }
+        PhasePredPenalty { /* neg_log_prob, */ penalty }
     }
 }
 
 #[derive(Clone, Copy)]
-struct PredPenalty {
-    penalty: [f64; 6], // Ordering is intergenic, utr, coding_phase0, coding_phase1, coding_phase2, intron
+struct PredPenalty { // Ordering is intergenic, utr, coding_phase0, coding_phase1, coding_phase2, intron
+    neg_log_prob: [f64; 6], // Negated log probability, lower value is more likely
+    penalty: [f64; 6], // Penalty is adjusted negated log probability with min prob (most likely) subtracted from all
 }
 
 #[allow(dead_code)]
 impl PredPenalty {
+    pub fn get_intergenic_neg_log_prob(&self) -> f64 {
+        self.neg_log_prob[0]
+    }
     pub fn get_intergenic_penalty(&self) -> f64 {
         self.penalty[0]
     }
 
+    pub fn get_utr_neg_log_prob(&self) -> f64 {
+        self.neg_log_prob[1]
+    }
     pub fn get_utr_penalty(&self) -> f64 {
         self.penalty[1]
     }
 
+    pub fn get_coding_phase0_neg_log_prob(&self) -> f64 {
+        self.neg_log_prob[2]
+    }
     pub fn get_coding_phase0_penalty(&self) -> f64 {
         self.penalty[2]
     }
 
+    pub fn get_coding_phase1_neg_log_prob(&self) -> f64 {
+        self.neg_log_prob[3]
+    }
     pub fn get_coding_phase1_penalty(&self) -> f64 {
         self.penalty[3]
     }
 
+    pub fn get_coding_phase2_neg_log_prob(&self) -> f64 {
+        self.neg_log_prob[4]
+    }
     pub fn get_coding_phase2_penalty(&self) -> f64 {
         self.penalty[4]
     }
 
+    pub fn get_intron_neg_log_prob(&self) -> f64 {
+        self.neg_log_prob[5]
+    }
     pub fn get_intron_penalty(&self) -> f64 {
         self.penalty[5]
     }
+
 }
 
 const PHASE_RETAIN: f64 = 0.20; // Adjust as needed
@@ -209,39 +238,19 @@ impl From<(&ClassPrediction, &PhasePrediction)> for PredPenalty {
             class_pred.get_intron() as f64,
         ];
 
-        // Calculate penalty from probs
-        let mut penalty = [0.0; 6];
-        for i in 0..6 {
-            let adjusted_pred = raw_probs[i];
+        let neg_log_prob = raw_pred_to_neg_log_prob(&raw_probs, PRED_PROB_FLOOR);
+        let penalty = neg_log_prob_to_penalty(&neg_log_prob);
 
-            let adjusted_pred = if adjusted_pred > PRED_PROB_FLOOR {
-                adjusted_pred
-            } else {
-                PRED_PROB_FLOOR
-            };
-            penalty[i] = -f64::log2(adjusted_pred);
-        }
-
-        let mut min_penalty = penalty[0];
-        for i in 1..6 {
-            if penalty[i] < min_penalty {
-                min_penalty = penalty[i]
-            }
-        }
-
-        for i in 0..6 {
-            penalty[i] -= min_penalty;
-        }
-
-        PredPenalty { penalty }
+        PredPenalty { neg_log_prob, penalty }
     }
 }
 
 const BASE_PROB_FLOOR: f64 = 0.000_000_001; // Prevent infinite penalties
 
 #[derive(Clone, Copy)]
-pub struct BasesPenalty {
-    penalty: [f64; 4], // Ordering is C, A, T, G
+pub struct BasesPenalty { // Ordering is C, A, T, G
+    //neg_log_prob: [f64; 4], // Negated log probability, lower value is more likely
+    penalty: [f64; 4], // Penalty is adjusted negated log probability with min prob (most likely) subtracted from all
 }
 
 fn min2(a: f64, b: f64) -> f64 {
@@ -295,30 +304,11 @@ impl From<&Bases> for BasesPenalty {
     fn from(bases: &Bases) -> Self {
         let raw_bases = bases.get();
 
-        let mut penalty = [0.0; 4];
-        for i in 0..4 {
-            let adjusted_base = raw_bases[i] as f64;
+        let converted_pred = convert_raw_pred(raw_bases);
+        let neg_log_prob = raw_pred_to_neg_log_prob(&converted_pred, BASE_PROB_FLOOR);
+        let penalty = neg_log_prob_to_penalty(&neg_log_prob);
 
-            let adjusted_base = if adjusted_base > BASE_PROB_FLOOR {
-                adjusted_base
-            } else {
-                BASE_PROB_FLOOR
-            };
-            penalty[i] = -f64::log2(adjusted_base);
-        }
-
-        let mut min_penalty = penalty[0];
-        for i in 1..4 {
-            if penalty[i] < min_penalty {
-                min_penalty = penalty[i]
-            }
-        }
-
-        for i in 0..4 {
-            penalty[i] -= min_penalty;
-        }
-
-        BasesPenalty { penalty }
+        BasesPenalty { /*neg_log_prob, */ penalty }
     }
 }
 
@@ -870,59 +860,30 @@ impl HmmState {
         class_pred: &ClassPredPenalty,
         phase_pred: &PhasePredPenalty,
         pred: &PredPenalty,
-    ) -> f64 {
+    ) -> (f64, f64) {
         let (primary, intron) = self.get_component_states();
 
         if intron != HmmIntronState::None {
-            return class_pred.get_intron_penalty();
+            return (pred.get_intron_neg_log_prob(), pred.get_intron_penalty());
         }
 
         match primary {
-            HmmPrimaryState::Intergenic => class_pred.get_intergenic_penalty(),
+            HmmPrimaryState::Intergenic => (pred.get_intergenic_neg_log_prob(), pred.get_intergenic_penalty()),
 
-            HmmPrimaryState::UTR5 | HmmPrimaryState::UTR3 => class_pred.get_utr_penalty(),
+            HmmPrimaryState::UTR5 | HmmPrimaryState::UTR3 =>
+                (pred.get_utr_neg_log_prob(), pred.get_utr_penalty()),
 
-            HmmPrimaryState::Coding0 =>
-            //class_pred.get_coding_penalty(),
-            //class_pred.get_coding_penalty() + phase_pred.get_phase0_penalty(),
-            {
-                pred.get_coding_phase0_penalty()
-            }
-
+            HmmPrimaryState::Coding0 => (pred.get_coding_phase0_neg_log_prob(), pred.get_coding_phase0_penalty()),
             HmmPrimaryState::Start0 | HmmPrimaryState::Stop0T =>
-            //class_pred.get_coding_penalty(),
-            //class_pred.get_coding_penalty() + phase_pred.get_phase0_penalty(),
-            {
-                pred.get_coding_phase0_penalty()
-            }
+                (pred.get_coding_phase0_neg_log_prob(), pred.get_coding_phase0_penalty()),
 
-            HmmPrimaryState::Coding1 =>
-            //class_pred.get_coding_penalty(),
-            //class_pred.get_coding_penalty() + phase_pred.get_phase2_penalty(),
-            {
-                pred.get_coding_phase2_penalty()
-            }
-
+            HmmPrimaryState::Coding1 => (pred.get_coding_phase2_penalty(), pred.get_coding_phase2_neg_log_prob()),
             HmmPrimaryState::Start1 | HmmPrimaryState::Stop1TA | HmmPrimaryState::Stop1TG =>
-            //class_pred.get_coding_penalty(),
-            //class_pred.get_coding_penalty() + phase_pred.get_phase2_penalty(),
-            {
-                pred.get_coding_phase2_penalty()
-            }
+                (pred.get_coding_phase2_neg_log_prob(), pred.get_coding_phase2_penalty()),
 
-            HmmPrimaryState::Coding2 =>
-            //class_pred.get_coding_penalty(),
-            //class_pred.get_coding_penalty() + phase_pred.get_phase1_penalty(),
-            {
-                pred.get_coding_phase1_penalty()
-            }
-
+            HmmPrimaryState::Coding2 => (pred.get_coding_phase1_neg_log_prob(), pred.get_coding_phase1_penalty()),
             HmmPrimaryState::Start2 | HmmPrimaryState::Stop2 =>
-            //class_pred.get_coding_penalty(),
-            //class_pred.get_coding_penalty() + phase_pred.get_phase1_penalty(),
-            {
-                pred.get_coding_phase1_penalty()
-            }
+                (pred.get_coding_phase1_neg_log_prob(), pred.get_coding_phase1_penalty()),
         }
     }
 
@@ -1575,7 +1536,9 @@ pub struct HmmEval {
     state: HmmState,
     previous_state: HmmState,
 
-    penalty: u64,
+    accum_penalty: u64, // Accumulated penalty, target to minimise
+    trans_penalty: u64, // Transition penalty into this state
+    neg_log_prob: u64   // Negative Log probability of all bases within this state
 }
 
 impl HmmEval {
@@ -1585,7 +1548,9 @@ impl HmmEval {
             end_position: 0,
             state: HmmState::Intergenic,
             previous_state: HmmState::Intergenic,
-            penalty: 0,
+            accum_penalty: 0,
+            trans_penalty: 0,
+            neg_log_prob: 0
         }
     }
 
@@ -1594,14 +1559,18 @@ impl HmmEval {
         end_position: usize,
         state: HmmState,
         previous_state: HmmState,
-        penalty: u64,
+        accum_penalty: u64,
+        trans_penalty: u64,
+        neg_log_prob: u64
     ) -> HmmEval {
         HmmEval {
             start_position,
             end_position,
             state,
             previous_state,
-            penalty,
+            accum_penalty,
+            trans_penalty,
+            neg_log_prob
         }
     }
 }
@@ -1610,8 +1579,8 @@ impl Ord for HmmEval {
     fn cmp(&self, other: &Self) -> Ordering {
         // Order on penalty (lowest), then position (highest)
         other
-            .penalty
-            .cmp(&self.penalty)
+            .accum_penalty
+            .cmp(&self.accum_penalty)
             .then_with(|| self.end_position.cmp(&other.end_position))
         //.then_with(|| self.state.cmp(&other.state))
     }
@@ -1673,7 +1642,7 @@ impl PredictionHmm {
         let maybe_old_eval = &self.best_eval[idx];
 
         if let Some(old_eval) = maybe_old_eval {
-            if eval.penalty >= old_eval.penalty {
+            if eval.accum_penalty >= old_eval.accum_penalty {
                 return;
             }
         }
@@ -1707,7 +1676,8 @@ impl PredictionHmm {
             .populate_successor_states_and_transition_penalties(&trans_ctx, &mut successors);
 
         for (next_state, trans_penalty) in successors.into_iter() {
-            let mut extra_penalty = trans_penalty;
+            let mut local_neg_log_prob = trans_penalty;
+            let mut local_penalty = trans_penalty;
 
             let start_position = eval.end_position;
             let end_position = start_position + next_state.get_base_count();
@@ -1716,21 +1686,27 @@ impl PredictionHmm {
             // Drop 'long' state picked near end
             {
                 for pos in start_position..end_position {
-                    extra_penalty += next_state.get_state_penalty(
+                    let (nlg, pen) = next_state.get_state_penalty(
                         &self.class_pred_pen[pos],
                         &self.phase_pred_pen[pos],
                         &self.pred_pen[pos],
                     );
+                    local_neg_log_prob += nlg;
+                    local_penalty += pen;
                 }
 
-                let penalty = eval.penalty + ((extra_penalty * PENALTY_SCALE) as u64);
+                let accum_penalty = eval.accum_penalty + ((local_penalty * PENALTY_SCALE) as u64);
+                let scaled_trans_penalty = (trans_penalty * PENALTY_SCALE) as u64;
+                let scaled_neg_log_prob = (local_neg_log_prob * PENALTY_SCALE) as u64;
 
                 let next_eval = HmmEval::new_successor(
                     start_position,
                     end_position,
                     next_state,
                     eval.state,
-                    penalty,
+                    accum_penalty,
+                    scaled_trans_penalty,
+                    scaled_neg_log_prob
                 );
 
                 self.consider_eval(next_eval);
@@ -1767,14 +1743,20 @@ pub struct HmmStateRegion {
     start_pos: usize,
     end_pos: usize,
     annotation_label: HmmAnnotationLabel,
+
+    trans_penalty: u64, // Transition penalty into each state in the region
+    neg_log_prob: u64   // Negative Log probability of all bases within this region
 }
 
 impl HmmStateRegion {
-    fn new(start_pos: usize, end_pos: usize, base_state: HmmAnnotationLabel) -> HmmStateRegion {
+    fn new(start_pos: usize, end_pos: usize, annotation_label: HmmAnnotationLabel,
+           trans_penalty: u64, neg_log_prob: u64) -> HmmStateRegion {
         HmmStateRegion {
             start_pos,
             end_pos,
-            annotation_label: base_state,
+            annotation_label,
+            trans_penalty,
+            neg_log_prob
         }
     }
 
@@ -1840,20 +1822,34 @@ impl PredictionHmmSolution {
         let mut eval = &self.eval;
         let mut region_end_pos = eval.end_position;
 
-        // State positions are 1 above base positions - state.end_pos = 0 is the dummy start, state end_pos 1 is the first real assignment
+        let mut accum_trans_penalty = 0u64;
+        let mut accum_neg_log_prob = 0u64;
 
-        // End position is exclusive
+        // State positions are inclusive start, exclusive end: state.start_pos = 0, state.end_pos = 1 is the first real state (almost always)
+        // A 'dummy root' state exists at the start with start_pos = 0, end_pos = 0, with intergenic state
 
+        // Extract all but the 'start dummy' HmmEval entry
         while eval.end_position > 0 {
+            accum_trans_penalty += eval.trans_penalty;
+            accum_neg_log_prob += eval.neg_log_prob;
+
             if eval.state.get_annotation_label() != eval.previous_state.get_annotation_label()
             // If prev state changes annotation label
             {
+                println!("Generate a standard HmmStateRegion S: {} E: {} Label: {} Trans: {} NegLog: {}",
+                         eval.start_position, region_end_pos, eval.state.get_annotation_label().to_str(),
+                         accum_trans_penalty, accum_neg_log_prob);
+
                 regions.push(HmmStateRegion::new(
                     eval.start_position,
                     region_end_pos,
                     eval.state.get_annotation_label(),
+                    accum_trans_penalty,
+                    accum_neg_log_prob
                 ));
-                region_end_pos = eval.start_position;
+                region_end_pos = eval.start_position; // Equivalent to previous_state.end_position
+                accum_trans_penalty = 0;
+                accum_neg_log_prob = 0;
             }
 
             let prev_position = eval.start_position;
@@ -1862,11 +1858,17 @@ impl PredictionHmmSolution {
             eval = self.hmm.best_eval.get(idx).unwrap().as_ref().unwrap();
         }
 
-        if region_end_pos > 1 {
+        // Drain accumulated intergenic region if non-zero length (almost always)
+        if region_end_pos > 0 {
+            println!("Generate a starting Intergenic HmmStateRegion S: {} E: {} Label: {} Trans: {} NegLog: {}",
+                     0, region_end_pos, eval.state.get_annotation_label().to_str(),
+                     accum_trans_penalty, accum_neg_log_prob);
             regions.push(HmmStateRegion::new(
-                0,
-                region_end_pos - 1,
+                eval.start_position,
+                region_end_pos,
                 eval.state.get_annotation_label(),
+                accum_trans_penalty,
+                accum_neg_log_prob
             ));
         }
 
@@ -1878,7 +1880,7 @@ impl PredictionHmmSolution {
     pub fn dump(&self, position: usize) {
         println!(
             "Solution Penalty: {} over {} bp starting at {}",
-            self.eval.penalty,
+            self.eval.accum_penalty,
             self.hmm.class_pred_pen.len(),
             position
         );

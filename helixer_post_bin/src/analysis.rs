@@ -67,6 +67,8 @@ impl<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>>
 
             let end_pos = start_pos + bp_vec.len();
 
+            println!("Solving a window from {} to {} (length: {})", start_pos, end_pos, bp_vec.len());
+
             let hmm = PredictionHmm::new(bp_vec);
             let maybe_solution = hmm.solve();
 
