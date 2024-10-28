@@ -50,7 +50,7 @@ impl<'a, T: H5Type + Clone + Copy> BlockedDataset1D<'a, T> {
 
     fn get_data_for_block(&self, block_id: BlockID) -> hdf5::Result<Array1<T>> {
         let slice = s![block_id.inner(), ..];
-        self.dataset.read_slice_1d::<T, _>(&slice)
+        self.dataset.read_slice_1d(slice)
     }
 }
 
@@ -164,7 +164,7 @@ impl<'a, T: ArrayConvInto<O>, O> BlockedDataset2D<'a, T, O> {
 
     fn get_data_for_block(&self, block_id: BlockID) -> hdf5::Result<Array2<T>> {
         let slice = s![block_id.inner(), .., ..];
-        self.dataset.read_slice_2d::<T, _>(&slice)
+        self.dataset.read_slice_2d(slice)
     }
 }
 

@@ -1,5 +1,5 @@
 use super::super::{Error, Result};
-use hdf5::{Dataset, File};
+use hdf5::{types::VarLenUnicode, Dataset, File};
 use std::path::Path;
 
 pub struct RawHelixerPredictions {
@@ -13,6 +13,12 @@ impl RawHelixerPredictions {
     pub fn new(predictions_file_path: &Path) -> Result<RawHelixerPredictions> {
         let predictions_file = File::open(predictions_file_path)?;
         Ok(RawHelixerPredictions { predictions_file })
+    }
+
+    pub fn get_model_md5sum(&self) -> Result<String> {
+        let attr = self.predictions_file.attr("model_md5sum")?;
+        let r: VarLenUnicode = attr.as_reader().read_scalar()?;
+        Ok(r.to_string())
     }
 
     pub fn get_class_raw(&self) -> Result<Dataset> {
