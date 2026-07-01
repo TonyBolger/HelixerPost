@@ -1,8 +1,8 @@
 use crate::results::conv::{Bases, ClassPrediction, PhasePrediction};
 use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
+use std::cmp::{min, Ordering};
 use std::collections::BinaryHeap;
-use std::sync::Arc;
+
 
 /// User-tunable HMM parameters. Built with `HmmConfig::default()` and
 /// optionally overridden by a YAML config file and/or CLI flags.
@@ -19,6 +19,9 @@ pub struct HmmConfig {
     /// Per-transition booleans gating which splice-junction types the decoder
     /// will consider in each surrounding context.
     pub splice: SpliceFlags,
+    /// Minimum Intron Lengths, for each supported intron class
+    /// Enforced by preventing
+    pub minimum_intron_lengths: MinimalIntronLengths,
     /// Multiplicative weights for the start / stop / donor / acceptor signals
     /// when they enter the per-base penalty sum.
     pub weights: HmmWeights,
@@ -33,6 +36,7 @@ impl Default for HmmConfig {
             prob_floor: 0.000_000_001,
             phase_retain: 0.20,
             splice: SpliceFlags::default(),
+            minimum_intron_lengths: MinimalIntronLengths::default(),
             weights: HmmWeights::default(),
             donor_fixed_penalty: DonorFixedPenalties::default(),
         }
@@ -107,6 +111,27 @@ impl Default for SpliceFlags {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+pub struct MinimalIntronLengths {
+    pub u2_gt_ag: usize,
+    pub u2_gc_ag: usize,
+    //    pub u12_gt_ag: usize, // Not currently considered a unique intron class
+    pub u12_at_ac: usize,
+}
+
+impl Default for MinimalIntronLengths {
+    fn default() -> Self {
+        Self {
+            u2_gt_ag: 50,
+            u2_gc_ag: 50,
+            //            u12_gt_ag: 30 // Not currently considered a unique intron class
+            u12_at_ac: 30,
+        }
+    }
+}
+
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct HmmWeights {
     pub start: f64,
     pub stop: f64,
@@ -130,14 +155,18 @@ impl Default for HmmWeights {
 pub struct DonorFixedPenalties {
     pub u2_gt_ag: f64,
     pub u2_gc_ag: f64,
-    pub u12_gt_ag: f64,
+//    pub u12_gt_ag: f64, // Not currently considered a unique intron class
     pub u12_at_ac: f64,
 }
 
+
+
 pub fn show_hmm_config(cfg: &HmmConfig) {
     let s = &cfg.splice;
+    let l = &cfg.minimum_intron_lengths;
     let w = &cfg.weights;
     let p = &cfg.donor_fixed_penalty;
+
     println!("HMM Config");
     println!(
         "  Splicing Flags: U:{} US:{} S:{} SC:{} C:{} CS:{} S:{} SU:{} U:{}",
@@ -145,13 +174,18 @@ pub fn show_hmm_config(cfg: &HmmConfig) {
         s.coding_stop, s.stop, s.stop_utr3, s.utr3,
     );
     println!(
+        "  Splicing - Minimum Intron Lengths: U2-GT-AG {}, U2-GC-AG {} U12-AT-AC {}",
+        l.u2_gt_ag, l.u2_gc_ag, /*l.u12_gt_ag,*/ l.u12_at_ac,  // Removed unused U12-GT-AG
+    );
+    println!(
         "  Splicing - Weights: Donor {}, Acceptor {}",
         w.donor, w.acceptor,
     );
     println!(
-        "  Splicing - Fixed Penalties: U2-GT-AG {}, U2-GC-AG {} U12-GT-AG {} U12-AT-AC {}",
-        p.u2_gt_ag, p.u2_gc_ag, p.u12_gt_ag, p.u12_at_ac,
+        "  Splicing - Fixed Penalties: U2-GT-AG {}, U2-GC-AG {} U12-AT-AC {}",
+        p.u2_gt_ag, p.u2_gc_ag, /*p.u12_gt_ag,*/ p.u12_at_ac, // Removed unused U12-GT-AG
     );
+
     println!("  Coding - Weights: Start {}, Stop {}", w.start, w.stop);
     println!(
         "  Phase Mode: Implementation 1, Dilute to Total, Retention: {}",
@@ -964,13 +998,13 @@ impl HmmState {
         }
     }
 
-    fn get_base_count(self) -> usize {
+    fn get_base_count(self, mil: &MinimalIntronLengths) -> usize {
         let (_, intron) = self.get_component_states();
 
         match intron {
-            HmmIntronState::U2GtAgDSS => 49,
-            HmmIntronState::U2GcAgDSS => 49,
-            HmmIntronState::U12AtAcDSS => 29,
+            HmmIntronState::U2GtAgDSS => min(mil.u2_gt_ag, 2) - 1,
+            HmmIntronState::U2GcAgDSS =>  min(mil.u2_gc_ag, 2) - 1,
+            HmmIntronState::U12AtAcDSS =>  min(mil.u12_at_ac, 2) - 1,
             _ => 1,
         }
     }
@@ -1676,7 +1710,7 @@ impl PartialOrd for HmmEval {
 const MAX_EVALS: u64 = 100_000_000_000;
 
 pub struct PredictionHmm {
-    cfg: Arc<HmmConfig>,
+    cfg: HmmConfig,
     class_pred_pen: Vec<ClassPredPenalty>,
     phase_pred_pen: Vec<PhasePredPenalty>,
 
@@ -1691,7 +1725,7 @@ pub struct PredictionHmm {
 impl PredictionHmm {
     pub fn new(
         bp_vector: Vec<(Bases, ClassPrediction, PhasePrediction)>,
-        cfg: Arc<HmmConfig>,
+        cfg: HmmConfig,
     ) -> PredictionHmm {
         let prob_floor = cfg.prob_floor;
         let phase_retain = cfg.phase_retain;
@@ -1761,6 +1795,8 @@ impl PredictionHmm {
             eval.end_position,
         );
 
+        let mil = self.cfg.minimum_intron_lengths.clone();
+
         let mut successors = Vec::with_capacity(HMM_STATES);
         eval.state
             .populate_successor_states_and_transition_penalties(&trans_ctx, &mut successors);
@@ -1770,7 +1806,7 @@ impl PredictionHmm {
             let mut local_penalty = trans_penalty;
 
             let start_position = eval.end_position;
-            let end_position = start_position + next_state.get_base_count();
+            let end_position = start_position + next_state.get_base_count(&mil);
 
             if end_position <= self.class_pred_pen.len()
             // Drop 'long' state picked near end

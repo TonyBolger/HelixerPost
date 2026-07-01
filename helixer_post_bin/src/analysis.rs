@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use threadpool::ThreadPool;
 use std::path::Path;
 use std::sync::mpsc::channel;
-use std::sync::Arc;
 
 use crate::analysis::extractor::{BasePredictionExtractor, ComparisonExtractor};
 use crate::analysis::gff_conv::hmm_solution_to_gff;
@@ -105,7 +104,7 @@ pub struct Analyzer<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<Ph
     comp_extractor: ComparisonExtractor<'a>,
     window_cfg: WindowConfig,
     filter_cfg: FilterConfig,
-    hmm_cfg: Arc<HmmConfig>,
+    hmm_cfg: HmmConfig,
     thread_pool: ThreadPool,
 }
 
@@ -127,7 +126,7 @@ impl<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>>
             comp_extractor,
             window_cfg,
             filter_cfg,
-            hmm_cfg: Arc::new(hmm_cfg),
+            hmm_cfg,
             thread_pool,
         }
     }
@@ -163,7 +162,7 @@ impl<'a, TC: ArrayConvInto<ClassPrediction>, TP: ArrayConvInto<PhasePrediction>>
             println!("Queuing a window from {} to {} (length: {})", start_pos, end_pos, bp_vec.len());
 
             let tx = tx.clone();
-            let hmm_cfg = Arc::clone(&self.hmm_cfg);
+            let hmm_cfg = self.hmm_cfg.clone();
             self.thread_pool.execute(move || {
                 let len = bp_vec.len();
                 let hmm = PredictionHmm::new(bp_vec, hmm_cfg);
