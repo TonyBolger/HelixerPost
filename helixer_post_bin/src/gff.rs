@@ -259,4 +259,16 @@ impl<W: Write> GffWriter<W> {
 
         Ok(())
     }
+
+    pub fn write_bytes(&mut self, bytes: &[u8]) -> std::io::Result<()> {
+        self.writer.write_all(bytes)
+    }
+
+    pub fn into_inner(mut self) -> std::io::Result<W> {
+        self.writer.flush()?;
+        match self.writer.into_inner() {
+            Ok(writer) => Ok(writer),
+            Err(err) => Err(err.into_error()),
+        }
+    }
 }
